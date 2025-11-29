@@ -67,7 +67,7 @@ export default function PasswordPrompt({ onSubmit, error }) {
 
         <div className="mt-6 pt-4 border-t border-gray-200">
           <p className="text-xs text-gray-500 text-center">
-            💡 <strong>Astuce:</strong> Le mot de passe contient 4 mots anglais liés au hockey
+            💡 Demandez le mot de passe au propriétaire du projet
           </p>
         </div>
 

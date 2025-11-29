@@ -42,10 +42,16 @@ async function main() {
   }
   
   // Get password
-  const password = await question('Enter password (or press Enter for default): ');
-  const finalPassword = password.trim() || 'skate puck shoot goal';
+  const password = await question('Enter password: ');
+  const finalPassword = password.trim();
   
-  console.log(`\n🔒 Encrypting with password: "${finalPassword}"\n`);
+  if (!finalPassword) {
+    console.error('❌ Password is required');
+    rl.close();
+    process.exit(1);
+  }
+  
+  console.log(`\n🔒 Encrypting with your password...\n`);
   
   // Encrypt
   const encrypted = CryptoJS.AES.encrypt(apiKey, finalPassword).toString();
@@ -71,7 +77,7 @@ async function main() {
   console.log('   1. The encrypted key is now in your source code');
   console.log('   2. Remove or comment out VITE_GROQ_API_KEY from .env');
   console.log('   3. Users will be prompted for password on first use');
-  console.log(`   4. Password: "${finalPassword}"\n`);
+  console.log('   4. Remember your password - you\'ll need it to decrypt!\n');
   
   rl.close();
 }

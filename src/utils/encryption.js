@@ -6,9 +6,9 @@
  */
 import CryptoJS from 'crypto-js';
 
-// The encrypted API key (generated with the password "skate puck shoot goal")
-// Encrypted using AES-256
-export const ENCRYPTED_API_KEY = 'U2FsdGVkX18Bm3wd8WFH7utIs6N1kawMfLul9vS/Yhi8vIl03xjP2etWQzsOet3I9oLZAJEs1jqny7P2UlyePBo3qMp001Kx7pdvCb3puC8=';
+// The encrypted API key
+// Encrypted using AES-256 with a secure password
+export const ENCRYPTED_API_KEY = 'U2FsdGVkX19rbHMFH7dFfFrVyTuyVeLUW+qBRNplqh1wcjS9Ha3fVExyoTEYETuyS2eGQCkMnBa9St8ZxOXxVCsGMt2Syx8/voHU9ksPbJI=';
 
 /**
  * Decrypt the API key with the password

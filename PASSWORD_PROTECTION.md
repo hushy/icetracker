@@ -26,7 +26,7 @@ Le script va:
 3. Chiffrer la clé avec AES-256
 4. Mettre à jour `src/utils/encryption.js` avec la clé chiffrée
 
-**Mot de passe par défaut:** `skate puck shoot goal`
+**Mot de passe:** Demandez au propriétaire du projet
 
 ### Étape 2: Nettoyer le .env
 
@@ -50,7 +50,6 @@ Au premier lancement, l'app demandera le mot de passe:
 Mot de passe: [________]
 ```
 
-Entrez: `skate puck shoot goal`
 
 ---
 
@@ -128,9 +127,6 @@ les commandes vocales avec l'IA
 
 Mot de passe: [________________]
          [Déverrouiller]
-
-💡 Astuce: Le mot de passe contient 
-4 mots anglais liés au hockey
 ```
 
 ### Session
@@ -180,7 +176,6 @@ Si vous publiez publiquement l'app:
 ### "Invalid password"
 
 - Vérifiez que vous utilisez le bon mot de passe
-- Par défaut: `skate puck shoot goal` (avec espaces)
 - Vérifiez que `ENCRYPTED_API_KEY` dans `encryption.js` est à jour
 
 ### "API key not unlocked"
