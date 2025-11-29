@@ -171,6 +171,36 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
             break;
           }
 
+          // Validate scorer exists
+          const scorerPlayer = actions.findPlayerByNumber(scorer);
+          if (!scorerPlayer) {
+            result.success = false;
+            result.message = `Player #${scorer} not found in roster`;
+            showFeedback('error', result.message);
+            break;
+          }
+
+          // Validate assists exist
+          if (assist1) {
+            const assist1Player = actions.findPlayerByNumber(assist1);
+            if (!assist1Player) {
+              result.success = false;
+              result.message = `Assistant #${assist1} not found in roster`;
+              showFeedback('error', result.message);
+              break;
+            }
+          }
+          
+          if (assist2) {
+            const assist2Player = actions.findPlayerByNumber(assist2);
+            if (!assist2Player) {
+              result.success = false;
+              result.message = `Assistant #${assist2} not found in roster`;
+              showFeedback('error', result.message);
+              break;
+            }
+          }
+
           console.log('[VoiceCmd] Recording goal for us');
           actions.recordGoal(true, scorer, assist1, assist2);
           result.message = `Goal by #${scorer}${assist1 ? ` (A: #${assist1}${assist2 ? `, #${assist2}` : ''})` : ''}`;

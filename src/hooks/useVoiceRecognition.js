@@ -11,6 +11,7 @@ export function useVoiceRecognition() {
   const [error, setError] = useState(null);
   const [language, setLanguage] = useState('fr-FR'); // Default to French
   const recognitionRef = useRef(null);
+  const shouldRestartRef = useRef(false); // Track if we should auto-restart
 
   useEffect(() => {
     // Check if browser supports Speech Recognition
@@ -33,8 +34,23 @@ export function useVoiceRecognition() {
     };
 
     recognition.onend = () => {
+      console.log('[Voice] Recognition ended, shouldRestart:', shouldRestartRef.current);
       setIsListening(false);
       setInterimTranscript('');
+      
+      // Auto-restart if user still wants to listen (keeps mic active between commands)
+      if (shouldRestartRef.current) {
+        console.log('[Voice] Auto-restarting recognition...');
+        setTimeout(() => {
+          if (shouldRestartRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (err) {
+              console.error('[Voice] Auto-restart failed:', err);
+            }
+          }
+        }, 100);
+      }
     };
 
     recognition.onerror = (event) => {
@@ -80,6 +96,7 @@ export function useVoiceRecognition() {
       setTranscript('');
       setInterimTranscript('');
       setError(null);
+      shouldRestartRef.current = true; // Enable auto-restart
       console.log('[Voice] Starting recognition, language:', language);
       try {
         recognitionRef.current.start();
@@ -97,7 +114,9 @@ export function useVoiceRecognition() {
   };
 
   const stopListening = () => {
-    if (recognitionRef.current && isListening) {
+    if (recognitionRef.current) {
+      shouldRestartRef.current = false; // Disable auto-restart
+      console.log('[Voice] Stopping recognition');
       recognitionRef.current.stop();
     }
   };
