@@ -7,7 +7,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Dependencies
 node_modules
 dist
 dist-ssr
@@ -24,9 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Build output
-build
-.vite
-
-
-
+# Environment variables (IMPORTANT: Keep API keys secret!)
+.env
+.env.local
+.env.production
+.env.bak

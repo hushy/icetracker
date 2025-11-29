@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, createContext, useContext } from "react";
+import VoiceCommandWidget from "./components/VoiceCommandWidget";
+import { createVoiceCommandActions, createVoiceCommandContext } from "./utils/voiceCommandActions";
 
 /**
  * HOCKEY TOI + PLUS/MINUS TRACKER — Single-team POC
@@ -369,7 +371,7 @@ export function useLanguage() {
 
 function LanguageProvider({ children }) {
   const [language, setLanguage] = useState(() => {
-    return localStorage.getItem("hockey-language") || "en";
+    return localStorage.getItem("hockey-language") || "fr";
   });
 
   const t = (key) => {
@@ -2745,12 +2747,15 @@ function PenaltyManagement({ match, clock, onAddPenalty, onRemovePenalty, onEarl
 
   // Force re-render every second to update timers and auto-complete expired penalties
   useEffect(() => {
-    if (!clock.running) return;
     const interval = setInterval(() => {
       forceUpdate(x => x + 1);
       
       // Auto-mark expired penalties as served
-      const currentElapsed = clock.elapsedMs + (Date.now() - (clock.lastStartedAt || Date.now()));
+      // Calculate current elapsed time (works whether clock is running or paused)
+      const currentElapsed = clock.running 
+        ? clock.elapsedMs + (Date.now() - (clock.lastStartedAt || Date.now()))
+        : clock.elapsedMs;
+      
       const currentPenalties = match?.penalties || [];
       const expiredPenalties = currentPenalties.filter(p => {
         if (p.served) return false;
@@ -2760,6 +2765,7 @@ function PenaltyManagement({ match, clock, onAddPenalty, onRemovePenalty, onEarl
       });
       
       if (expiredPenalties.length > 0) {
+        console.log('[Penalties] Auto-removing expired penalties:', expiredPenalties.map(p => `#${p.playerNumber}`));
         expiredPenalties.forEach(p => onRemovePenalty(p.id));
       }
     }, 100);
@@ -3266,6 +3272,33 @@ function App() {
     });
   }
 
+  // Set clock to a specific time (for manual correction)
+  function handleSetClockTime(milliseconds) {
+    updateMatch((match) => {
+      const wasRunning = match.clock.running;
+      const now = Date.now();
+      
+      // If clock is running, update enteredAt for on-ice players
+      const nextPlayers = wasRunning ? match.players.map((p) => {
+        if (p.onIce) {
+          return { ...p, enteredAt: now };
+        }
+        return p;
+      }) : match.players;
+
+      return {
+        ...match,
+        clock: {
+          running: wasRunning,
+          elapsedMs: milliseconds,
+          lastStartedAt: wasRunning ? now : null,
+          countdownDurationMs: match.clock.countdownDurationMs
+        },
+        players: nextPlayers,
+      };
+    });
+  }
+
   // Reset clock and all match data
   function handleResetClock() {
     updateMatch((match) => {
@@ -3476,6 +3509,51 @@ function App() {
     });
   }
 
+  // Toggle multiple players on/off ice in a single state update
+  function toggleMultiplePlayersOnIce(playerIds) {
+    console.log('[App] Toggling multiple players:', playerIds);
+    const now = Date.now();
+    updateMatch((match) => {
+      const timestamps = getEventTimestamps(match.clock);
+      const newEvents = [];
+      
+      const nextPlayers = match.players.map((p) => {
+        if (playerIds.includes(p.id)) {
+          // Toggle this player
+          const newOnIceState = !p.onIce;
+          
+          // Log event
+          newEvents.push({
+            id: mkId(),
+            time: nowHHMMSS(),
+            elapsedTime: timestamps.elapsedTime,
+            remainingTime: timestamps.remainingTime,
+            type: "ON_ICE_CHANGE",
+            playerId: p.id,
+            onIce: newOnIceState,
+          });
+          
+          if (p.onIce) {
+            // Taking player off ice
+            if (clock.running && p.enteredAt != null) {
+              const delta = Math.max(0, Math.floor((now - p.enteredAt) / 1000));
+              return { ...p, onIce: false, enteredAt: null, toiSeconds: (p.toiSeconds || 0) + delta };
+            }
+            return { ...p, onIce: false, enteredAt: null };
+          } else {
+            // Putting player on ice
+            return { ...p, onIce: true, enteredAt: clock.running ? now : null };
+          }
+        }
+        return p;
+      });
+      
+      console.log('[App] Players after toggle:', nextPlayers.filter(p => playerIds.includes(p.id)).map(p => ({ id: p.id, number: p.number, onIce: p.onIce })));
+      
+      return { ...match, players: nextPlayers, events: [...match.events, ...newEvents] };
+    });
+  }
+
   function applyPlusMinus(usScored) {
     // Show modal to get scorer and assists for both teams
     setPendingGoalUsScored(usScored);
@@ -3510,14 +3588,17 @@ function App() {
         return updated;
       });
       
-      // Remove ONE minor penalty for the team that scored (early release on goal)
-      const scoringTeam = usScored ? "US" : "THEM";
+      // Remove ONE minor penalty for the OPPONENT team (early release on power play goal)
+      // If US scores → THEM loses a penalty (power play ends)
+      // If THEM scores → US loses a penalty
+      const penalizedTeam = usScored ? "THEM" : "US";
       const penalties = match.penalties || [];
-      // Find the first unserved minor penalty for the scoring team
+      // Find the first unserved minor penalty for the opponent team
       const penaltyToRelease = penalties.find(p => 
-        p.team === scoringTeam && 
+        p.team === penalizedTeam && 
         p.type === "Minor" && 
-        !p.served
+        !p.served &&
+        p.affectsStrength  // Only release penalties that affect strength
       );
       const nextPenalties = penalties.map(p => {
         // Only mark the first found minor penalty as served
@@ -3770,6 +3851,28 @@ function App() {
     const ourTeamName = currentMatch?.ourTeamName || "Us";
     const opponentTeamName = currentMatch?.opponentTeamName || "Them";
 
+    // Create voice command actions
+    const voiceActions = createVoiceCommandActions({
+      togglePlayerOnIce,
+      toggleMultiplePlayersOnIce,
+      recordGoal,
+      updatePlayerStat,
+      startClock: handleStartClock,
+      pauseClock: handlePauseClock,
+      setClockTime: handleSetClockTime,
+      addPenalty,
+      players: matchPlayers
+    }, {
+      clock: clock,
+      match: currentMatch
+    });
+
+    // Create voice command context
+    const voiceContext = createVoiceCommandContext({
+      players: matchPlayers,
+      match: currentMatch
+    });
+
     return (
     <div className="min-h-screen pb-28 px-3 sm:px-6 max-w-5xl mx-auto">
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
@@ -3946,6 +4049,13 @@ function App() {
       <div className="fixed bottom-2 right-4 text-xs text-gray-400 pointer-events-none">
         v{APP_VERSION}
       </div>
+
+      {/* Voice Command Widget */}
+      <VoiceCommandWidget 
+        actions={voiceActions}
+        context={voiceContext}
+        useLLM={true}
+      />
     </div>
     );
   }
