@@ -126,12 +126,15 @@ export function createVoiceCommandActions({
         hasContext: !!ctx,
         hasClock: !!ctx?.clock,
         clockElapsedMs: ctx?.clock?.elapsedMs,
-        clockRunning: ctx?.clock?.running
+        clockRunning: ctx?.clock?.running,
+        clockLastStartedAt: ctx?.clock?.lastStartedAt
       });
       
       // Create properly formatted penalty object
-      // ✅ Use match elapsed time, not Date.now()!
-      const currentMatchTime = ctx?.clock?.elapsedMs || 0;
+      // ✅ Calculate REAL elapsed time (account for running clock)
+      const currentMatchTime = ctx?.clock?.running 
+        ? ctx.clock.elapsedMs + (Date.now() - ctx.clock.lastStartedAt)
+        : ctx?.clock?.elapsedMs || 0;
       const durationMap = {
         2: 'Minor',
         4: 'Double Minor', 
@@ -163,7 +166,11 @@ export function createVoiceCommandActions({
         startTimeMs: currentMatchTime,
         durationMs: durationMs,
         durationMinutes: durationMinutes,
-        willExpireAt: currentMatchTime + durationMs
+        willExpireAt: currentMatchTime + durationMs,
+        clockWasRunning: ctx?.clock?.running,
+        calculatedFrom: ctx?.clock?.running 
+          ? `elapsedMs(${ctx.clock.elapsedMs}) + (now - lastStartedAt)`
+          : 'elapsedMs only'
       });
       
       addPenalty(penalty);

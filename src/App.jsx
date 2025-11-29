@@ -1285,7 +1285,7 @@ function SimpleRosterView({ team, updateTeam, clock, togglePlayerOnIce, penaltie
   const playersInPenalty = team.players
     .map(p => {
       const playerPenalty = penalties.find(pen => 
-        pen.playerNumber === p.number && 
+        parseInt(pen.playerNumber) === parseInt(p.number) && // ✅ Compare as integers
         pen.team === "US" && 
         !pen.served && 
         pen.affectsStrength
@@ -2489,7 +2489,7 @@ function GoalInputModal({ isOpen, onClose, onSave, players, teamName, penalties 
   const playersInPenaltyIds = players
     .filter(p => {
       const playerPenalty = penalties.find(pen => 
-        pen.playerNumber === p.number && 
+        parseInt(pen.playerNumber) === parseInt(p.number) && // ✅ Compare as integers
         pen.team === team && 
         !pen.served && 
         pen.affectsStrength
@@ -2944,7 +2944,7 @@ function AddPenaltyModal({ isOpen, onClose, onSave, teamName, currentElapsedMs, 
   const playersInPenaltyIds = players
     .filter(p => {
       const playerPenalty = penalties.find(pen => 
-        pen.playerNumber === p.number && 
+        parseInt(pen.playerNumber) === parseInt(p.number) && // ✅ Compare as integers
         pen.team === team && 
         !pen.served && 
         pen.affectsStrength
