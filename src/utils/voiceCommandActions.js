@@ -117,12 +117,21 @@ export function createVoiceCommandActions({
      * Add a penalty
      * @param {Object} penalty - Penalty details
      */
-    addPenalty: addPenalty ? (penaltyInfo) => {
+    addPenalty: addPenalty ? (penaltyInfo, dynamicContext) => {
+      // Use dynamic context if provided, otherwise fallback to static context
+      const ctx = dynamicContext || context;
+      
       console.log('[Actions] Adding penalty:', penaltyInfo);
+      console.log('[Actions] Context available:', {
+        hasContext: !!ctx,
+        hasClock: !!ctx?.clock,
+        clockElapsedMs: ctx?.clock?.elapsedMs,
+        clockRunning: ctx?.clock?.running
+      });
       
       // Create properly formatted penalty object
       // ✅ Use match elapsed time, not Date.now()!
-      const currentMatchTime = context?.clock?.elapsedMs || 0;
+      const currentMatchTime = ctx?.clock?.elapsedMs || 0;
       const durationMap = {
         2: 'Minor',
         4: 'Double Minor', 
@@ -148,9 +157,15 @@ export function createVoiceCommandActions({
         coincident: false
       };
       
-      console.log('[Actions] Penalty startTimeMs:', currentMatchTime, 'Duration:', durationMs);
+      console.log('[Actions] Penalty created:', {
+        id: penalty.id,
+        playerNumber: penalty.playerNumber,
+        startTimeMs: currentMatchTime,
+        durationMs: durationMs,
+        durationMinutes: durationMinutes,
+        willExpireAt: currentMatchTime + durationMs
+      });
       
-      console.log('[Actions] Formatted penalty:', penalty);
       addPenalty(penalty);
     } : null
   };
@@ -167,10 +182,12 @@ export function createVoiceCommandActions({
  */
 export function createVoiceCommandContext({
   players = [],
-  match = null
+  match = null,
+  clock = null
 }) {
   return {
     players,
+    clock,
     onIcePlayers: players.filter(p => p.onIce),
     availableNumbers: players.map(p => p.number),
     matchActive: !!match

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useVoiceRecognition } from './useVoiceRecognition';
 import { interpretCommand } from '../utils/commandInterpreter';
 import { interpretCommandWithLLM } from '../utils/llmInterpreter';
@@ -22,6 +22,8 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
   const [isExecuting, setIsExecuting] = useState(false);
   const [feedback, setFeedback] = useState(null); // { type: 'success'|'error', message: string }
   const [needsPassword, setNeedsPassword] = useState(!hasApiKey());
+  const lastProcessedTranscript = useRef(''); // Prevent duplicate processing
+  const processingTimeoutRef = useRef(null);
 
   // Show feedback temporarily
   const showFeedback = useCallback((type, message, duration = 3000) => {
@@ -465,12 +467,13 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
 
           if (actions.addPenalty) {
             console.log('[VoiceCmd] Adding penalty');
+            console.log('[VoiceCmd] Current context clock:', context?.clock);
             actions.addPenalty({
               playerNumber: playerNum,
               duration,
               reason,
               timestamp
-            });
+            }, context); // ✅ Pass context dynamically
             result.message = `${duration} min penalty for #${playerNum} (${reason})${timestamp ? ` at ${timestamp}` : ''}`;
             showFeedback('success', result.message);
           } else {
@@ -500,10 +503,36 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
   // Process transcript when it changes
   useEffect(() => {
     if (voiceRecognition.transcript && voiceRecognition.transcript.trim().length > 0) {
-      console.log('[VoiceCmd] New transcript received:', voiceRecognition.transcript);
+      const currentTranscript = voiceRecognition.transcript.trim();
       
-      const processCommand = async () => {
-        const currentTranscript = voiceRecognition.transcript;
+      // Ignore if same as last processed transcript (prevent duplicates)
+      if (currentTranscript === lastProcessedTranscript.current) {
+        console.log('[VoiceCmd] Ignoring duplicate transcript:', currentTranscript);
+        return;
+      }
+      
+      // Ignore very short transcripts (likely noise or partial results)
+      if (currentTranscript.length < 3) {
+        console.log('[VoiceCmd] Ignoring short transcript:', currentTranscript);
+        return;
+      }
+      
+      console.log('[VoiceCmd] New transcript received:', currentTranscript);
+      
+      // Clear any pending processing timeout
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+      
+      // Debounce: wait a bit to ensure we have the complete transcript
+      processingTimeoutRef.current = setTimeout(async () => {
+        // Double-check we haven't already processed this
+        if (currentTranscript === lastProcessedTranscript.current) {
+          console.log('[VoiceCmd] Already processed, skipping');
+          return;
+        }
+        
+        lastProcessedTranscript.current = currentTranscript;
         
         // Clear transcript immediately to prevent re-processing
         voiceRecognition.clearTranscript();
@@ -545,10 +574,15 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
           },
           ...prev.slice(0, 19) // Keep last 20
         ]);
-      };
-
-      processCommand();
+      }, 300); // Wait 300ms to ensure we have the final transcript
     }
+    
+    return () => {
+      // Cleanup timeout on unmount
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+    };
   }, [voiceRecognition.transcript]); // Only depend on transcript, not context or useLLM to avoid re-processing
 
   return {

@@ -2759,13 +2759,29 @@ function PenaltyManagement({ match, clock, onAddPenalty, onRemovePenalty, onEarl
       const currentPenalties = match?.penalties || [];
       const expiredPenalties = currentPenalties.filter(p => {
         if (p.served) return false;
+        
         const elapsed = currentElapsed - p.startTimeMs;
         const remaining = p.durationMs - elapsed;
-        return remaining <= 0;
+        
+        // Debug logging for penalty timing
+        if (elapsed < 0) {
+          console.warn('[Penalties] Invalid elapsed time for penalty:', {
+            penaltyId: p.id,
+            playerNumber: p.playerNumber,
+            startTimeMs: p.startTimeMs,
+            currentElapsed: currentElapsed,
+            elapsed: elapsed,
+            remaining: remaining
+          });
+          return false; // Don't remove penalties with invalid timing
+        }
+        
+        // Only remove if expired by at least 1 second to avoid race conditions
+        return remaining < -1000;
       });
       
       if (expiredPenalties.length > 0) {
-        console.log('[Penalties] Auto-removing expired penalties:', expiredPenalties.map(p => `#${p.playerNumber}`));
+        console.log('[Penalties] Auto-removing expired penalties:', expiredPenalties.map(p => `#${p.playerNumber} (${Math.floor((currentElapsed - p.startTimeMs) / 1000)}s elapsed)`));
         expiredPenalties.forEach(p => onRemovePenalty(p.id));
       }
     }, 100);
@@ -3870,7 +3886,8 @@ function App() {
     // Create voice command context
     const voiceContext = createVoiceCommandContext({
       players: matchPlayers,
-      match: currentMatch
+      match: currentMatch,
+      clock: clock
     });
 
     return (

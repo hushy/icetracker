@@ -28,3 +28,7 @@ dist-ssr
 .env.local
 .env.production
 .env.bak
+
+# Documentation files
+*.md
+!README.md
