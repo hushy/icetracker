@@ -12,6 +12,7 @@ export function useVoiceRecognition() {
   const [language, setLanguage] = useState('fr-FR'); // Default to French
   const recognitionRef = useRef(null);
   const shouldRestartRef = useRef(false); // Track if we should auto-restart
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
     // Check if browser supports Speech Recognition
@@ -24,7 +25,7 @@ export function useVoiceRecognition() {
 
     // Initialize recognition
     const recognition = new SpeechRecognition();
-    recognition.continuous = true; // Keep listening
+    recognition.continuous = !isMobile; // ✅ Disable continuous on mobile (causes issues)
     recognition.interimResults = true; // Show interim results
     recognition.lang = language; // Support multiple languages
 
@@ -34,19 +35,23 @@ export function useVoiceRecognition() {
     };
 
     recognition.onend = () => {
-      console.log('[Voice] Recognition ended, shouldRestart:', shouldRestartRef.current);
+      console.log('[Voice] Recognition ended, shouldRestart:', shouldRestartRef.current, 'isMobile:', isMobile);
       setIsListening(false);
       setInterimTranscript('');
       
       // Auto-restart if user still wants to listen (keeps mic active between commands)
-      if (shouldRestartRef.current) {
-        console.log('[Voice] Auto-restarting recognition...');
+      // ✅ Only auto-restart on desktop (mobile handles this differently)
+      if (shouldRestartRef.current && !isMobile) {
+        console.log('[Voice] Auto-restarting recognition (desktop)...');
         setTimeout(() => {
           if (shouldRestartRef.current && recognitionRef.current) {
             try {
               recognitionRef.current.start();
             } catch (err) {
               console.error('[Voice] Auto-restart failed:', err);
+              // If restart fails, stop properly
+              shouldRestartRef.current = false;
+              setIsListening(false);
             }
           }
         }, 100);

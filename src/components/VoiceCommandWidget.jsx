@@ -92,13 +92,22 @@ export default function VoiceCommandWidget({ actions, context, useLLM = true }) 
 
       {/* Interim Transcript Display - Always show when listening */}
       {isListening && (
-        <div className="absolute bottom-16 sm:bottom-20 right-0 min-w-[200px] sm:min-w-[250px] max-w-[90vw] p-2 sm:p-3 bg-blue-600 text-white rounded-lg shadow-lg mb-2">
-          <div className="flex items-center gap-2">
+        <div className="absolute bottom-16 sm:bottom-20 right-0 min-w-[200px] sm:min-w-[250px] max-w-[90vw] bg-blue-600 text-white rounded-lg shadow-lg mb-2">
+          {/* ✅ Always show listening indicator */}
+          <div className="flex items-center gap-2 p-2 sm:p-3 border-b border-blue-500">
             <span className="animate-pulse">🎤</span>
-            <span className="text-xs sm:text-sm">
-              {interimTranscript || 'Écoute en cours...'}
+            <span className="text-xs sm:text-sm font-medium">
+              Écoute en cours...
             </span>
           </div>
+          
+          {/* ✅ Show interim transcript separately if available */}
+          {interimTranscript && (
+            <div className="p-2 sm:p-3 bg-blue-700">
+              <p className="text-xs text-blue-200 mb-1">Preview:</p>
+              <p className="text-xs sm:text-sm italic">"{interimTranscript}"</p>
+            </div>
+          )}
         </div>
       )}
 
