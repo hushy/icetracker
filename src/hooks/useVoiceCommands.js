@@ -574,7 +574,7 @@ export function useVoiceCommands(actions, context = {}, useLLM = true) {
           },
           ...prev.slice(0, 19) // Keep last 20
         ]);
-      }, 300); // Wait 300ms to ensure we have the final transcript
+      }, 1000); // ✅ Wait 1s to ensure we have the final transcript (mobile sends multiple "final" results)
     }
     
     return () => {
