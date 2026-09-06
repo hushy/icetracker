@@ -1,21 +1,23 @@
+import {trackPause} from './pause-warning.js';
 // Append only transitions, never timer ticks or synchronization heartbeats.
 export function recordMatchEvents(before, after, now = Date.now(), ticking = false) {
+  after = trackPause(before, after, now);
   const reset = after.events !== before.events && after.events?.length === 0;
   const events = reset ? [] : [...(after.events || [])];
   const additions = [];
   const add = (type, details = {}, clock = after, occurredAt = now) => additions.push({
     type, period: clock.period, remainingMs: clock.remainingMs,
-    elapsedMs: clock.periodElapsedMs ?? null, occurredAt, ...details,
+    elapsedMs: clock.periodElapsedMs ?? null, occurredAt, enteredAt: now, ...details,
   });
   if (reset) add('New game');
   else {
-    for (const goal of after.goals || []) if (!(before.goals || []).some(old => old.id === goal.id)) add('Goal', {goalId:goal.id,team:goal.team,scorer:goal.scorer,assists:goal.assists});
+    for (const goal of after.goals || []) if (!(before.goals || []).some(old => old.id === goal.id)) add('Goal', {goalId:goal.id,team:goal.team,scorer:goal.scorer,assists:goal.assists,assistsConfirmed:goal.assistsConfirmed,...(goal.occurredAt != null ? {period:goal.period,remainingMs:goal.remainingMs,elapsedMs:goal.elapsedMs,occurredAt:goal.occurredAt} : {})});
     for (const goal of before.goals || []) if (!(after.goals || []).some(next => next.id === goal.id)) add('Goal removed', {goalId:goal.id,team:goal.team,scorer:goal.scorer,assists:goal.assists});
     for (const team of ['home','away']) {
       for (const row of after.penalties[team]) {
         const old = before.penalties[team].find(item => item.id === row.id);
-        const details = {team,penaltyId:row.id,player:row.player,kind:row.kind,label:row.label,reason:row.reason||'',deferred:Boolean(row.deferred)};
-        if (!old) add('Penalty added',details);
+        const details = {team,penaltyId:row.id,player:row.player,kind:row.kind,label:row.label,reason:row.reason||'',deferred:Boolean(row.deferred),servedBy:row.servedBy||''};
+        if (!old) add('Penalty added',{...details,...row.assessedClock,startedClock:row.deferred?null:{period:after.period,remainingMs:after.remainingMs,elapsedMs:after.periodElapsedMs,occurredAt:now}});
         else if (old.deferred && !row.deferred) add('Penalty started',details);
         else if (old.remainingMs > 0 && row.remainingMs === 0) {
           if (ticking && !before.auxiliary) {
@@ -33,7 +35,7 @@ export function recordMatchEvents(before, after, now = Date.now(), ticking = fal
     else if (after.auxiliary && before.auxiliary) {
       if (before.auxiliary.remainingMs>0 && after.auxiliary.remainingMs===0) add('Countdown complete');
       else if (before.auxiliary.running!==after.auxiliary.running) add(after.auxiliary.running?'Countdown resumed':'Countdown paused');
-    } else if (before.remainingMs>0 && after.remainingMs===0 && ticking) add('Period complete');
+    } else if (before.remainingMs>0 && after.remainingMs===0 && ticking) add('Period complete',{},after,now);
     else if (before.running!==after.running && before.period===after.period) add(after.running?'Clock resumed':'Clock paused');
   }
   if (!additions.length) return after;

@@ -42,7 +42,7 @@ export function applyPowerPlayRelease(game, scoringTeam, id, penaltyShot = false
 }
 export function recordGoal(game, team, details = {}) {
   if(game.auxiliary || game.scores[team]>=999) return game;
-  const event={id:details.id,team,period:game.period,remainingMs:game.remainingMs,scorer:details.scorer?.trim()||'',
+  const event={id:details.id,team,period:game.period,remainingMs:game.remainingMs,...details.clock,assistsConfirmed:Boolean(details.assistsConfirmed || details.assist1 || details.assist2),scorer:details.scorer?.trim()||'',
     assists:[details.assist1,details.assist2].map(value=>value?.trim()||'').filter(Boolean),penaltyShot:Boolean(details.penaltyShot),hideAnimation:details.hideAnimation === true,releasedPenaltyId:details.releaseId||null};
   const changed=details.releaseId?applyPowerPlayRelease(game,team,details.releaseId,details.penaltyShot):game;
   return {...changed,running:game.settings.autoPauseOnGoalPenalty ? false : changed.running,scores:{...changed.scores,[team]:changed.scores[team]+1},goals:[...(changed.goals||[]),event]};

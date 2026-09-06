@@ -323,3 +323,160 @@ test('wake lock defaults on and migrates old defaults while preserving a new exp
  legacy.settings.keepAwake=true;
  assert.equal(restoreGame(JSON.stringify(legacy)).settings.keepAwake,true);
 });
+
+import { eventClock, reportModel, matchElapsed, reviewIssues, backupText, readBackup, addMatchNote, reportCsv } from '../src/scoreboard/match-report.js';
+test('goal occurrence is captured before entry while all clocks keep running', () => {
+  let game=advanceGame(running(),10000).game;
+  const clock=eventClock(game,100000);
+  game=advanceGame(game,7000).game;
+  const after=recordMatchEvents(game,recordGoal(game,'home',{id:'capture',scorer:'12',clock}),107000);
+  assert.equal(after.remainingMs,1183000);assert.equal(after.running,true);
+  const goal=after.events.find(e=>e.type==='Goal');
+  assert.equal(goal.remainingMs,1190000);assert.equal(goal.elapsedMs,10000);
+  assert.equal(goal.occurredAt,100000);assert.equal(goal.enteredAt,107000);
+});
+test('cumulative report time uses each recorded period length after format changes', () => {
+  let game=createGame({...defaultSettings,periodMinutes:15});
+  game=nextPeriod({...game,settings:{...game.settings,periodMinutes:20}});
+  const event={period:2,elapsedMs:446000,remainingMs:754000};
+  assert.equal(matchElapsed(game,event),1346000);
+  game=nextPeriod({...game,settings:{...game.settings,periodMinutes:5}});
+  assert.equal(matchElapsed(game,{period:3,elapsedMs:30000}),2130000);
+  assert.equal(matchElapsed({...game,periodLengths:{},events:[]},event),null);
+});
+test('penalty report distinguishes assessment, actual start, early end and imposed minutes', () => {
+  let game=running();
+  const row={...penalty(120000),kind:'minor',reason:'tripping',servedBy:'9',deferred:true,assessedClock:eventClock(game,1000)};
+  game=recordMatchEvents(game,{...game,penalties:{...game.penalties,home:[row]}},5000);
+  game=advanceGame(game,10000).game;
+  game=recordMatchEvents(game,{...game,penalties:{...game.penalties,home:[{...row,deferred:false}]}},15000);
+  game=advanceGame(game,44000).game;
+  game=recordMatchEvents(game,{...game,penalties:{...game.penalties,home:[]}},59000);
+  const report=reportModel(game),p=report.penalties[0];
+  assert.equal(p.elapsedMs,0);assert.equal(p.start.elapsedMs,10000);assert.equal(p.end.elapsedMs,54000);
+  assert.equal(p.durationMs,120000);assert.equal(report.totals[0].home.penaltyMs,120000);assert.equal(p.servedBy,'9');
+});
+test('report excludes removed goals and operational actions without losing the journal', () => {
+  let game=createGame();
+  game=recordMatchEvents(game,recordGoal(game,'home',{id:'g',scorer:'12'}),1000);
+  game=recordMatchEvents(game,removeGoal(game,'home'),2000);
+  assert.equal(reportModel(game).goals.length,0);assert.equal(game.events.length,2);
+  assert.equal(reviewIssues(game).length,0);
+});
+test('review distinguishes an unconfirmed blank assist from a confirmed unassisted goal', () => {
+  let game=createGame();game=recordMatchEvents(game,recordGoal(game,'home',{id:'g',scorer:'12'}),1000);
+  assert.ok(reviewIssues(game).some(e=>e.message==='Assists to confirm'));
+  game=editMatchEvent(game,game.events[0].id,{assistsConfirmed:true});
+  assert.equal(reviewIssues(game).length,0);
+});
+test('correction history preserves original entry time and previous values through backup', () => {
+  let game=createGame();game=recordMatchEvents(game,recordGoal(game,'home',{id:'g',scorer:'12'}),1000);
+  const id=game.events[0].id;
+  game=editMatchEvent(game,id,{scorer:'18',occurredAt:900});
+  game=editMatchEvent(game,id,{scorer:'19'});
+  const restored=readBackup(backupText(game));
+  assert.equal(restored.events[0].history.length,2);
+  assert.equal(restored.events[0].history[0].previous.scorer,'12');
+  assert.equal(restored.events[0].history[1].previous.scorer,'18');
+  assert.equal(restored.events[0].enteredAt,1000);assert.equal(restored.goals[0].scorer,'19');
+});
+test('backups round trip match data, notes and artwork, restoring all clocks paused', () => {
+  let game=running();game.matchInfo={venue:'Paris',competition:'U13'};
+  game=addMatchNote(game,'Check with referee',eventClock(game,5000));
+  game=startTimeout(game,'home');
+  const restored=readBackup(backupText(game));
+  assert.equal(restored.running,false);assert.equal(restored.auxiliary.running,false);
+  assert.equal(restored.matchInfo.venue,'Paris');assert.equal(restored.events[0].note,'Check with referee');
+  assert.deepEqual(restored.periodLengths,game.periodLengths);
+});
+test('malformed or lossy backup imports fail instead of silently dropping records', () => {
+  const game=createGame();game.events=[{id:'bad',type:'Goal',period:1,remainingMs:0,assists:{bad:true}}];
+  for(const input of ['{}','not json',JSON.stringify(game),backupText(game)])assert.equal(readBackup(input),null);
+  game.events=[{id:'a',type:'Goal',period:1,remainingMs:0,elapsedMs:-100}];
+  assert.equal(readBackup(backupText(game)),null);
+});
+test('period exports omit other periods and private notes and escape spreadsheet formulas', () => {
+  let game=createGame();game=recordMatchEvents(game,recordGoal(game,'home',{id:'g1',scorer:'12'}),1000);
+  game=nextPeriod(game);game=recordMatchEvents(game,recordGoal(game,'away',{id:'g2',scorer:'18'}),2000);
+  game=addMatchNote(game,'Private discussion');
+  const csv=reportCsv(game,'2',key=>key,team=>team==='home'?'=DANGER()':'Visitors');
+  assert.equal(reportModel(game,'2').goals.length,1);
+  assert.ok(csv.includes("'=DANGER()"));assert.ok(!csv.includes('Private discussion'));assert.ok(csv.includes('"18"'));assert.ok(!csv.includes('"12"'));
+});
+test('review detects score mismatch and matching duplicate records', () => {
+  let game=createGame();game=recordMatchEvents(game,recordGoal(game,'home',{id:'g1',scorer:'12',assistsConfirmed:true}),1000);
+  game=recordMatchEvents(game,recordGoal(game,'home',{id:'g2',scorer:'12',assistsConfirmed:true}),2000);
+  assert.equal(reviewIssues(game).filter(i=>i.message==='Possible duplicate').length,2);
+  game.scores.home=7;
+  assert.ok(reviewIssues(game).some(i=>i.message==='Score and recorded goals differ'));
+});
+test('internal notes never pause live match or auxiliary clocks',()=>{
+ const live=running();assert.equal(prepareDialog(live,'note'),live);
+ const timeout=startTimeout(live,'home');assert.equal(prepareDialog(timeout,'note'),timeout);
+});
+test('manual penalty timing corrections affect report without changing live timers',()=>{
+ let game=running();game=recordMatchEvents(game,{...game,penalties:{home:[penalty(120000)],away:[]}},1000);
+ const id=game.events[0].id;
+ game=editMatchEvent(game,id,{startOverrideMs:60000,endOverrideMs:104000});
+ const row=reportModel(game).penalties[0];assert.equal(row.startMs,60000);assert.equal(row.endMs,104000);
+ assert.equal(game.penalties.home[0].remainingMs,120000);assert.equal(row.durationMs,120000);
+});
+
+import {newMatch} from '../src/scoreboard/management.js';
+test('new match resets play and sheet while preserving chosen setup and venue',()=>{
+ let game=running();game.scores.home=4;game.events=[{id:'old',type:'Match note'}];game.goals=[{id:'g'}];game.penalties.home=[penalty(120000)];game.timeoutsUsed.home=true;game.matchInfo={venue:'Paris',competition:'U13',number:'old'};
+ const fresh=newMatch(game,{...game.settings,periodMinutes:15,periods:2});
+ assert.deepEqual(fresh.scores,{home:0,away:0});assert.equal(fresh.remainingMs,900000);assert.equal(fresh.period,1);assert.equal(fresh.running,false);
+ assert.deepEqual(fresh.events,[]);assert.deepEqual(fresh.goals,[]);assert.deepEqual(fresh.penalties,{home:[],away:[]});assert.equal(fresh.timeoutsUsed.home,false);
+ assert.equal(fresh.settings.periods,2);assert.equal(fresh.settings.home,game.settings.home);assert.equal(fresh.matchInfo.venue,'Paris');assert.equal(fresh.matchInfo.number,undefined);assert.ok(fresh.displayRevision);
+ assert.equal(game.scores.home,4);
+});
+test('invalid saved configuration cannot replace the current match',()=>{
+ const game=running();assert.equal(newMatch(game,{...game.settings,periodMinutes:-5}),null);assert.equal(game.running,true);
+});
+
+import {trackPause,pauseWarning} from '../src/scoreboard/pause-warning.js';
+test('pause duration uses wall time and persists through unrelated actions and public snapshots',()=>{
+ const before=running();let paused=trackPause(before,{...before,running:false},100000);
+ assert.equal(paused.pauseStartedAt,100000);
+ paused=trackPause(paused,{...paused,scores:{home:1,away:0}},106000);
+ assert.deepEqual(pauseWarning(paused,114999),{seconds:14,level:0});
+ const packet=readDisplaySnapshot({type:'state',sentAt:115000,game:paused},null);
+ assert.equal(packet.game.pauseStartedAt,100000);
+ assert.deepEqual(pauseWarning(packet.game,115000),{seconds:15,level:1});
+ assert.deepEqual(pauseWarning(paused,145000),{seconds:45,level:2});
+ assert.deepEqual(pauseWarning(paused,220000),{seconds:120,level:3});
+});
+test('resume, new pause and phase changes reset the warning; completed clocks have none',()=>{
+ let game=running();game=trackPause(game,{...game,running:false},100000);
+ const resumed=trackPause(game,{...game,running:true},120000);assert.equal(resumed.pauseStartedAt,null);assert.equal(pauseWarning(resumed,130000),null);
+ const paused=trackPause(resumed,{...resumed,running:false},140000);assert.equal(pauseWarning(paused,142000).seconds,2);
+ const next=trackPause(paused,nextPeriod(paused),150000);assert.equal(next.pauseStartedAt,150000);
+ const completed=trackPause(paused,{...paused,remainingMs:0},160000);assert.equal(pauseWarning(completed,170000),null);
+});
+test('auxiliary pause duration follows the active countdown, not the frozen game clock',()=>{
+ let game=startTimeout(running(),'home');assert.equal(pauseWarning(game,100000),null);
+ game=trackPause(game,{...game,auxiliary:{...game.auxiliary,running:false}},100000);
+ assert.equal(pauseWarning(game,120000).seconds,20);
+ const back=trackPause(game,leaveAuxiliary(game),130000);assert.equal(back.pauseStartedAt,130000);
+});
+test('restore preserves a saved pause but starts a fresh pause for previously running clocks',()=>{
+ const game={...createGame(),pauseStartedAt:1000};assert.equal(restoreGame(JSON.stringify(game)).pauseStartedAt,1000);
+ const restored=restoreGame(JSON.stringify({...game,running:true}));assert.ok(restored.pauseStartedAt>1000);
+ assert.deepEqual(pauseWarning({...game,pauseStartedAt:20000},10000),{seconds:0,level:0});
+});
+
+test('global no-animation setting persists, synchronizes and belongs to saved configurations',()=>{
+ const game=createGame({...defaultSettings,noAnimations:true});
+ assert.equal(restoreGame(JSON.stringify(game)).settings.noAnimations,true);
+ assert.equal(readDisplaySnapshot({type:'state',sentAt:Date.now(),game},null).game.settings.noAnimations,true);
+ assert.equal(presetSettings(game.settings).noAnimations,true);
+ const old={...game,settings:{...game.settings}};delete old.settings.noAnimations;
+ assert.equal(restoreGame(JSON.stringify(old)).settings.noAnimations,false);
+});
+test('disabled goal and penalty animations consume events without replaying on re-enable',()=>{
+ const goal={id:'hidden-global',team:'home'},event={id:'hidden-penalty',type:'Penalty started'};
+ const goals=observeGoals(new Set(),[goal],true);assert.equal(goals.goal,null);assert.equal(observeGoals(goals.seen,[goal],false).goal,null);
+ const penalties=observePenaltyEvents(new Set(),[event],true);assert.deepEqual(penalties.fresh,[]);assert.deepEqual(observePenaltyEvents(penalties.seen,[event],false).fresh,[]);
+ assert.equal(observePenaltyEvents(new Set(),[event]).fresh.length,1);
+});
