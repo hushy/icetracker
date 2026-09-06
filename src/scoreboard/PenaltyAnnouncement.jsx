@@ -16,19 +16,21 @@ export function PenaltyNotice({event,settings}){
    {!ended&&<div className="penalty-notice-time">{event.type==='Penalty reduced'?formatTime(event.penaltyRemainingMs):event.label}{event.deferred?` · ${t('Waiting')}`:''}</div>}
  </div>;
 }
-export default function PenaltyAnnouncement({game,disconnected=false}){
+export default function PenaltyAnnouncement({game,disconnected=false,suspended=false}){
+ const displayRevision=useRef(game.displayRevision);
  const seen=useRef(null);const [queue,setQueue]=useState([]);
  useEffect(()=>{
-   const observed=observePenaltyEvents(seen.current,game.events);seen.current=observed.seen;
+   if(displayRevision.current!==game.displayRevision){displayRevision.current=game.displayRevision;seen.current=observePenaltyEvents(null,game.events).seen;setQueue([]);return;}
+   const observed=observePenaltyEvents(seen.current,game.events,game.settings.noAnimations);seen.current=observed.seen;
    const ids=new Set((game.events||[]).map(event=>event.id));
    setQueue(previous=>{
      const kept=previous.filter(event=>ids.has(event.id));
-     const fresh=disconnected?[]:observed.fresh.filter(event=>event.occurredAt!=null&&Date.now()-event.occurredAt<15000);
-     if(disconnected)return previous.length?[]:previous;
+     const fresh=disconnected?[]:observed.fresh.filter(event=>(event.enteredAt??event.occurredAt)!=null&&Date.now()-(event.type==='Penalty added'?(event.enteredAt??event.occurredAt):event.occurredAt)<15000);
+     if(disconnected||game.settings.noAnimations)return previous.length?[]:previous;
      return fresh.length?[...kept,...fresh]:kept.length===previous.length?previous:kept;
    });
- },[game.events,disconnected]);
+ },[game.events,game.displayRevision,game.settings.noAnimations,disconnected]);
  const active=queue[0];
- useEffect(()=>{if(!active)return;const timer=setTimeout(()=>setQueue(previous=>previous.slice(1)),PENALTY_ANIMATION_MS);return()=>clearTimeout(timer);},[active?.id]);
- return active?<PenaltyNotice key={active.id} event={active} settings={game.settings}/>:null;
+ useEffect(()=>{if(!active||suspended||game.settings.noAnimations)return;const timer=setTimeout(()=>setQueue(previous=>previous.slice(1)),PENALTY_ANIMATION_MS);return()=>clearTimeout(timer);},[active?.id,suspended,game.settings.noAnimations]);
+ return active&&!suspended&&!game.settings.noAnimations?<PenaltyNotice key={active.id} event={active} settings={game.settings}/>:null;
 }

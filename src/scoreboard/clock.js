@@ -4,11 +4,11 @@ export const STORAGE_KEY = 'icetracker-scoreboard-v1';
 export const defaultSettings = {
   home: 'HOME', away: 'AWAY', homeLogo: '', awayLogo: '', background: '',
   periodMinutes: 20, periods: 3, shiftEnabled: false, shiftSeconds: 60,
-  keepAwake: true, keepAwakePreferenceSet: false, autoPauseOnGoalPenalty: false, endHorn: true, volume: 70, language: 'en', theme: 'volants', hornSound: DEFAULT_HORN, homeClub: '', awayClub: '', homeCategory: '', awayCategory: '', breakMinutes: 5,
+  noAnimations: false, keepAwake: true, keepAwakePreferenceSet: false, autoPauseOnGoalPenalty: false, endHorn: true, volume: 70, language: 'en', theme: 'volants', hornSound: DEFAULT_HORN, homeClub: '', awayClub: '', homeCategory: '', awayCategory: '', breakMinutes: 5,
 };
 export function createGame(settings = defaultSettings) {
   return { settings: { ...settings }, remainingMs: settings.periodMinutes * 60000,
-    running: false, period: 1, periodElapsedMs: 0, events: [], scores: { home: 0, away: 0 },
+    running: false, pauseStartedAt: Date.now(), period: 1, periodElapsedMs: 0, periodLengths: {1: settings.periodMinutes * 60000}, matchInfo: {date: new Date().toLocaleDateString('en-CA')}, events: [], scores: { home: 0, away: 0 },
     penalties: { home: [], away: [] }, auxiliary: null, timeoutsUsed: {home:false,away:false}, goals: [], shiftRemainingMs: settings.shiftSeconds * 1000 };
 }
 export function formatTime(ms) {
@@ -41,7 +41,7 @@ export function advanceGame(game, elapsedMs) {
   return { game: { ...game, remainingMs, periodElapsedMs: (game.periodElapsedMs || 0) + delta, penalties, shiftRemainingMs, running: remainingMs > 0 }, horn };
 }
 export function nextPeriod(game) {
-  return { ...game, period: game.period + 1, periodElapsedMs: 0, remainingMs: game.settings.periodMinutes * 60000,
+  return { ...game, periodLengths: {...game.periodLengths, [game.period]: game.periodLengths?.[game.period] ?? game.periodElapsedMs + game.remainingMs, [game.period + 1]: game.settings.periodMinutes * 60000}, period: game.period + 1, periodElapsedMs: 0, remainingMs: game.settings.periodMinutes * 60000,
     running: false, auxiliary: null, shiftRemainingMs: game.settings.shiftSeconds * 1000 };
 }
 export function parseTime(value) {
@@ -56,6 +56,7 @@ export function restoreGame(raw) {
     settings.keepAwake = settings.keepAwakePreferenceSet === true ? settings.keepAwake !== false : true;
     if (data.settings.breakMinutes == null && Number.isFinite(data.settings.warmupMinutes)) settings.breakMinutes=data.settings.warmupMinutes;
     if(data.auxiliary?.kind==='warmup')data.auxiliary.kind='break';
+    settings.noAnimations = settings.noAnimations === true;
     settings.autoPauseOnGoalPenalty = settings.autoPauseOnGoalPenalty === true;
     settings.language = settings.language === 'fr' ? 'fr' : 'en';
     settings.theme = settings.theme === 'neutral' ? 'neutral' : 'volants';
@@ -87,6 +88,8 @@ export function restoreGame(raw) {
     // A refresh is an explicit interruption: restore the last saved clock paused.
     const periodElapsedMs = Number.isFinite(data.periodElapsedMs) && data.periodElapsedMs >= 0 ? data.periodElapsedMs : Math.max(0,settings.periodMinutes*60000-data.remainingMs);
     const events = Array.isArray(data.events) ? data.events.filter(event=>event && typeof event.id==='string' && typeof event.type==='string' && Number.isFinite(event.remainingMs) && Number.isFinite(event.period)) : goals.map(goal=>({...goal,type:'Goal',elapsedMs:null,occurredAt:null}));
-    return { ...data, settings, running: false, auxiliary, timeoutsUsed, goals, periodElapsedMs, events };
+    const activeWasRunning = data.auxiliary ? data.auxiliary.running : data.running;
+    const pauseStartedAt = (auxiliary?.remainingMs ?? data.remainingMs) <= 0 ? null : !activeWasRunning && Number.isFinite(data.pauseStartedAt) ? Math.min(Date.now(),data.pauseStartedAt) : Date.now();
+    return { ...data, settings, running: false, pauseStartedAt, auxiliary, timeoutsUsed, goals, periodElapsedMs, events };
   } catch { return null; }
 }

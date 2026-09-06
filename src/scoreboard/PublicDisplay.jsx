@@ -3,7 +3,6 @@ import { usePublicDisplay } from './display-sync.js';
 import { translator } from './i18n.js';
 import { useWakeLock } from './device-support.js';
 import Icon from './Icon.jsx';
-import GoalCelebration from './GoalCelebration.jsx';
 import { observeGoals, GOAL_ANIMATION_MS } from './goal-animation.js';
 import GameBoard from './GameBoard.jsx';
 import './scoreboard.css';
@@ -13,11 +12,14 @@ export default function PublicDisplay({ id }) {
   const game=view?.game;
   useWakeLock(Boolean(game?.settings.keepAwake));
   const seenGoals=useRef(null);
+  const displayRevision=useRef(undefined);
   const [celebration,setCelebration]=useState(null);
   useEffect(()=>{
     if (!game) return;
-    const observed=observeGoals(seenGoals.current,game.goals);
+    if(displayRevision.current!==game.displayRevision){displayRevision.current=game.displayRevision;seenGoals.current=observeGoals(null,game.goals).seen;setCelebration(null);return;}
+    const observed=observeGoals(seenGoals.current,game.goals,game.settings.noAnimations);
     seenGoals.current=observed.seen;
+    if(game.settings.noAnimations){setCelebration(null);return;}
     if (observed.goal && !view.disconnected) setCelebration(observed.goal);
     else if (celebration && (view.disconnected || !game.goals.some(goal=>goal.id===celebration.id))) setCelebration(null);
   },[game,view?.disconnected,celebration]);
@@ -40,7 +42,6 @@ export default function PublicDisplay({ id }) {
   }
   return <div className={`ice-app public-display theme-${game?.settings.theme||'volants'} ${fullscreen?'is-fullscreen':''}`}>
     <div className="public-toolbar"><button onClick={toggleFullscreen}><Icon name="expand"/>{t(fullscreen?'Exit fullscreen':'Fullscreen')}</button></div>
-    {!game?<div className="display-waiting"><h1>{t('Waiting for operator…')}</h1><p>{t('Open the public window from the operator page on this computer.')}</p></div>:<main><GameBoard game={game} disconnected={view.disconnected}/></main>}
-    {celebration && game && <GoalCelebration key={celebration.id} goal={celebration} settings={game.settings}/> }
+    {!game?<div className="display-waiting"><h1>{t('Waiting for operator…')}</h1><p>{t('Open the public window from the operator page on this computer.')}</p></div>:<main><GameBoard game={game} disconnected={view.disconnected} goal={celebration}/></main>}
   </div>;
 }
