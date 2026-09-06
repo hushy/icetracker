@@ -72,11 +72,14 @@ Use Node 22 or newer:
 npm ci
 npm run dev
 npm run test:scoreboard
+npm run test:browser
 npm run build
 npm run preview
 ```
 
 Development URL: http://localhost:3000/icetracker/. Build outputs `dist/`, including `sw.js`. Scoreboard tests use Node's built-in runner. Original statistics/voice Vitest files are preserved, but their undeclared dependencies are outside the scoreboard checks.
+
+`npm run test:browser` drives the built scoreboard in a real browser: it builds, inlines the bundle into `dist/preview.html` so `file://` works despite the `/icetracker/` base, and runs the scenarios in `tests/browser/` against an operator window and its public screen. `playwright-core` ships no browser of its own; the harness uses the Chrome or Chromium already installed, and `CHROME_PATH` overrides the search. Scenarios seed `localStorage` with a known match rather than clicking one together, and fail on any page error.
 
 Push the source to `hushy/icetracker` main and select **Settings → Pages → Source → GitHub Actions**. The included workflow tests, builds and deploys. Vite's base is `/icetracker/`; the deployed URL is https://hushy.github.io/icetracker/. See [GitHub Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
