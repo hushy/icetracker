@@ -8,16 +8,9 @@ export function periodLength(game, period) {
   const event = game.events.find(e => e.period === period && e.elapsedMs != null);
   return event ? event.elapsedMs + event.remainingMs : null;
 }
-export function matchElapsed(game, event) {
-  if (event.elapsedMs == null) return null;
-  let total = event.elapsedMs;
-  for (let p = 1; p < event.period; p++) {
-    const length = periodLength(game, p);
-    if (length == null) return null;
-    total += length;
-  }
-  return total;
-}
+// FFHG sheets read time inside the period next to the period number. Adding the
+// periods together is what the paper sheet never does.
+export const periodElapsed = event => event?.elapsedMs ?? null;
 export function eventClock(game, now = Date.now()) {
   return { period: game.period, remainingMs: game.remainingMs, elapsedMs: game.periodElapsedMs, occurredAt: now };
 }
@@ -30,7 +23,8 @@ export function reportModel(game, selectedPeriod = '') {
     const related = game.events.filter(item => item.penaltyId && item.penaltyId === e.penaltyId && !item.voided);
     const start = e.deferred ? related.find(item => item.type === 'Penalty started') : e.startedClock || e;
     const end = related.find(item => ['Penalty served', 'Penalty ended'].includes(item.type));
-    return { ...e, start, end, startMs: e.startOverrideMs ?? (start ? matchElapsed(game,start) : null), endMs:e.endOverrideMs ?? (end ? matchElapsed(game,end) : null), durationMs: parseTime(e.label || '') };
+    return { ...e, start, end, startMs: e.startOverrideMs ?? periodElapsed(start), endMs: e.endOverrideMs ?? periodElapsed(end),
+      startPeriod: start?.period ?? e.period, endPeriod: end?.period ?? e.period, durationMs: parseTime(e.label || '') };
   });
   const periods = [...new Set([game.period, ...game.events.map(e => e.period)])].sort((a,b) => a-b);
   const totals = periods.filter(p => !selectedPeriod || p === Number(selectedPeriod)).map(period => ({
@@ -58,17 +52,19 @@ export function reviewIssues(game) {
     if (!e.reason) push(e, 'Penalty reason missing');
     if (e.durationMs == null) push(e, 'Penalty duration missing');
     if (e.endMs == null && !game.penalties[e.team]?.some(row=>row.id===e.penaltyId&&row.remainingMs>0)) push(e,'Penalty end to check');
-    if (e.endMs!=null&&e.startMs!=null&&e.endMs<e.startMs) push(e,'Penalty end to check');
+    if (e.endMs!=null&&e.startMs!=null&&e.endPeriod===e.startPeriod&&e.endMs<e.startMs) push(e,'Penalty end to check');
   }
   const entries = [...report.goals, ...report.penalties];
   for (const e of entries) {
-    if (matchElapsed(game,e) == null) push(e, 'Event time to check');
+    if (periodElapsed(e) == null) push(e, 'Event time to check');
     const length = periodLength(game,e.period);
     if (length != null && e.elapsedMs != null && Math.abs(length-e.elapsedMs-e.remainingMs)>1000) push(e,'Event time to check');
     const duplicate = entries.find(other => other.id !== e.id && other.type === e.type && other.team === e.team && other.period === e.period && other.remainingMs === e.remainingMs && (other.scorer || other.player || '') === (e.scorer || e.player || '') && (other.label || '') === (e.label || ''));
     if (duplicate && !e.duplicateChecked) push(e, 'Possible duplicate');
   }
-  for (const team of ['home','away']) if (report.goals.filter(e=>e.team===team).length !== game.scores[team]) {
+  const scored = team => report.goals.filter(e => e.team === team &&
+    (!game.settings.resetScoresEachPeriod || e.period === game.period)).length;
+  for (const team of ['home','away']) if (scored(team) !== game.scores[team]) {
     issues.push({ id:`score-${team}`,team,message:'Score and recorded goals differ' });
   }
   return issues;
@@ -108,15 +104,15 @@ export function reportCsv(game, selectedPeriod, t, teamName) {
   const rows=[[t('Match transcription aid')],[teamName('home'),game.scores.home,teamName('away'),game.scores.away],[t('Period'),selectedPeriod||t('All periods')],
     [t('Date'),game.matchInfo?.date||'',t('Scheduled time'),game.matchInfo?.scheduledTime||'',t('Venue'),game.matchInfo?.venue||'',t('Competition'),game.matchInfo?.competition||'',t('Match number'),game.matchInfo?.number||'']];
   for (const team of ['home','away']) {
-    rows.push([], [teamName(team),t('Goals')],['#',t('Period'),t('Match elapsed'),t('Scorer'),t('Assists')]);
-    for (const e of report.goals.filter(e=>e.team===team)) rows.push([reportModel(game).goals.filter(g=>g.team===team).findIndex(g=>g.id===e.id)+1,e.period,elapsedTime(matchElapsed(game,e)),e.scorer||'',(e.assists||[]).join(' / ')]);
-    rows.push([], [teamName(team),t('Penalties')],[t('Period'),t('Match elapsed'),t('Player'),t('Assessed minutes'),t('Reason'),t('Start time'),t('End'),t('Served by (optional)')]);
-    for (const e of report.penalties.filter(e=>e.team===team)) rows.push([e.period,elapsedTime(matchElapsed(game,e)),e.kind==='bench'?'E':e.player||'',e.durationMs==null?'':e.durationMs/60000,t(reasonLabel(e.reason)),e.startMs==null?'':elapsedTime(e.startMs),e.endMs==null?'':elapsedTime(e.endMs),e.servedBy||'']);
+    rows.push([], [teamName(team),t('Goals')],['#',t('Period'),t('Period elapsed'),t('Scorer'),t('Assists')]);
+    for (const e of report.goals.filter(e=>e.team===team)) rows.push([reportModel(game).goals.filter(g=>g.team===team).findIndex(g=>g.id===e.id)+1,e.period,elapsedTime(periodElapsed(e)),e.scorer||'',(e.assists||[]).join(' / ')]);
+    rows.push([], [teamName(team),t('Penalties')],[t('Period'),t('Period elapsed'),t('Player'),t('Assessed minutes'),t('Reason'),t('Start time'),t('End'),t('Served by (optional)')]);
+    for (const e of report.penalties.filter(e=>e.team===team)) rows.push([e.period,elapsedTime(periodElapsed(e)),e.kind==='bench'?'E':e.player||'',e.durationMs==null?'':e.durationMs/60000,t(reasonLabel(e.reason)),e.startMs==null?'':elapsedTime(e.startMs),e.endMs==null?'':elapsedTime(e.endMs),e.servedBy||'']);
   }
   rows.push([], [t('Period'),teamName('home')+' '+t('Goals'),teamName('away')+' '+t('Goals'),teamName('home')+' '+t('Assessed minutes'),teamName('away')+' '+t('Assessed minutes'),t('Start time'),t('End')]);
   for (const row of report.totals) rows.push([row.period,row.home.goals,row.away.goals,row.home.penaltyMs/60000,row.away.penaltyMs/60000,localTime(row.start,game),localTime(row.end,game)]);
-  rows.push([], [t('Timeout'),t('Match elapsed')]);
-  for (const e of report.timeouts) rows.push([teamName(e.team),elapsedTime(matchElapsed(game,e))]);
+  rows.push([], [t('Timeout'),t('Period'),t('Period elapsed')]);
+  for (const e of report.timeouts) rows.push([teamName(e.team),e.period,elapsedTime(periodElapsed(e))]);
   rows.push([], [t('Pre-filled aid. Complete and check against the official sheet.')]);
   const safe=value=>{let s=String(value??'');if(/^\s*[=+@-]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
   return '\uFEFF'+rows.map(row=>row.map(safe).join(';')).join('\r\n');

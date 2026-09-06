@@ -324,7 +324,7 @@ test('wake lock defaults on and migrates old defaults while preserving a new exp
  assert.equal(restoreGame(JSON.stringify(legacy)).settings.keepAwake,true);
 });
 
-import { eventClock, reportModel, matchElapsed, reviewIssues, backupText, readBackup, addMatchNote, reportCsv } from '../src/scoreboard/match-report.js';
+import { eventClock, reportModel, periodElapsed, reviewIssues, backupText, readBackup, addMatchNote, reportCsv } from '../src/scoreboard/match-report.js';
 test('goal occurrence is captured before entry while all clocks keep running', () => {
   let game=advanceGame(running(),10000).game;
   const clock=eventClock(game,100000);
@@ -335,14 +335,17 @@ test('goal occurrence is captured before entry while all clocks keep running', (
   assert.equal(goal.remainingMs,1190000);assert.equal(goal.elapsedMs,10000);
   assert.equal(goal.occurredAt,100000);assert.equal(goal.enteredAt,107000);
 });
-test('cumulative report time uses each recorded period length after format changes', () => {
+test('report times stay inside their own period instead of adding the periods together', () => {
   let game=createGame({...defaultSettings,periodMinutes:15});
-  game=nextPeriod({...game,settings:{...game.settings,periodMinutes:20}});
-  const event={period:2,elapsedMs:446000,remainingMs:754000};
-  assert.equal(matchElapsed(game,event),1346000);
-  game=nextPeriod({...game,settings:{...game.settings,periodMinutes:5}});
-  assert.equal(matchElapsed(game,{period:3,elapsedMs:30000}),2130000);
-  assert.equal(matchElapsed({...game,periodLengths:{},events:[]},event),null);
+  game=advanceGame({...game,running:true},600000).game;
+  game=recordMatchEvents(game,recordGoal(game,'home',{id:'g1',scorer:'12'}),1000);
+  game=advanceGame({...nextPeriod(game),running:true},120000).game;
+  game=recordMatchEvents(game,recordGoal(game,'home',{id:'g2',scorer:'18'}),2000);
+  const report=reportModel(game);
+  assert.equal(periodElapsed(report.goals[0]),600000);
+  assert.equal(periodElapsed(report.goals[1]),120000);
+  const csv=reportCsv(game,'',key=>key,team=>team);
+  assert.ok(csv.includes('"02:00"'));assert.ok(!csv.includes('"17:00"'));
 });
 test('penalty report distinguishes assessment, actual start, early end and imposed minutes', () => {
   let game=running();
@@ -479,4 +482,60 @@ test('disabled goal and penalty animations consume events without replaying on r
  const goals=observeGoals(new Set(),[goal],true);assert.equal(goals.goal,null);assert.equal(observeGoals(goals.seen,[goal],false).goal,null);
  const penalties=observePenaltyEvents(new Set(),[event],true);assert.deepEqual(penalties.fresh,[]);assert.deepEqual(observePenaltyEvents(penalties.seen,[event],false).fresh,[]);
  assert.equal(observePenaltyEvents(new Set(),[event]).fresh.length,1);
+});
+
+import { discardPenalty } from '../src/scoreboard/penalty-rules.js';
+test('an entry error takes the penalty and its whole trace off the sheet, silently', () => {
+  let game = running();
+  const row = {...penalty(120000), kind:'minor', reason:'tripping', assessedClock:eventClock(game,1000)};
+  game = recordMatchEvents(game, {...game, penalties:{...game.penalties, home:[row]}}, 5000);
+  assert.equal(game.events.filter(e => e.penaltyId === 'p1').length, 1);
+  const corrected = recordMatchEvents(game, discardPenalty(game, 'home', 'p1'), 9000);
+  assert.deepEqual(corrected.penalties.home, []);
+  assert.equal(corrected.events.some(e => e.penaltyId === 'p1'), false);
+  assert.equal(corrected.events.some(e => e.type === 'Penalty ended'), false);
+  assert.equal(reportModel(corrected).penalties.length, 0);
+  assert.equal(corrected.running, true);
+  assert.equal('discardedPenaltyIds' in corrected, false, 'the marker never reaches storage');
+  // A penalty restored without its own event stays just as silent.
+  let legacy = {...running(), penalties:{home:[penalty(120000)],away:[]}};
+  legacy = recordMatchEvents(legacy, discardPenalty(legacy, 'home', 'p1'), 3000);
+  assert.deepEqual(legacy.events, []);
+});
+test('discarding an unknown penalty changes nothing and the clock never pauses for the dialog', () => {
+  const game = running();
+  assert.equal(discardPenalty(game, 'home', 'missing'), game);
+  const live = {...running(), penalties:{home:[penalty(120000)],away:[]}};
+  assert.equal(prepareDialog(live, {discard:penalty(120000), team:'home'}), live);
+  assert.equal(prepareDialog({...live, settings:{...live.settings, autoPauseOnGoalPenalty:true}}, {discard:penalty(120000), team:'home'}).running, true);
+});
+test('per-period scoring clears the score at the period change and keeps the goals recorded', () => {
+  let game = createGame({...defaultSettings, resetScoresEachPeriod:true});
+  game = recordMatchEvents(game, recordGoal(game, 'home', {id:'g1', scorer:'12', assistsConfirmed:true}), 1000);
+  assert.equal(game.scores.home, 1);
+  game = recordMatchEvents(game, nextPeriod(game), 2000);
+  assert.deepEqual(game.scores, {home:0, away:0});
+  assert.equal(reportModel(game).goals.length, 1);
+  assert.equal(reportModel(game).totals[0].home.goals, 1);
+  assert.equal(game.events.at(-1).scoresReset, true);
+  assert.equal(reviewIssues(game).some(issue => issue.message === 'Score and recorded goals differ'), false);
+});
+test('scores carry over between periods unless the option is on', () => {
+  let game = createGame();
+  game = recordGoal(game, 'home', {id:'g1', scorer:'12'});
+  assert.equal(nextPeriod(game).scores.home, 1);
+  assert.equal(restoreGame(JSON.stringify(createGame())).settings.resetScoresEachPeriod, false);
+  assert.equal(restoreGame(JSON.stringify(createGame({...defaultSettings, resetScoresEachPeriod:true}))).settings.resetScoresEachPeriod, true);
+  assert.equal(presetSettings(createGame({...defaultSettings, resetScoresEachPeriod:true}).settings).resetScoresEachPeriod, true);
+});
+test('removing a goal under per-period scoring only reaches this period', () => {
+  let game = createGame({...defaultSettings, resetScoresEachPeriod:true});
+  game = recordGoal(game, 'home', {id:'g1', scorer:'12'});
+  game = nextPeriod(game);
+  // A stray count with no goal in this period must not delete the previous period's goal.
+  assert.equal(removeGoal({...game, scores:{...game.scores, home:1}}, 'home').goals.length, 1);
+  game = recordGoal(game, 'home', {id:'g2', scorer:'18'});
+  const cleared = removeGoal(game, 'home');
+  assert.equal(cleared.scores.home, 0);
+  assert.deepEqual(cleared.goals.map(goal => goal.id), ['g1']);
 });

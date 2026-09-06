@@ -40,6 +40,16 @@ export function applyPowerPlayRelease(game, scoringTeam, id, penaltyShot = false
   if(!choice) return game;
   return {...game,penalties:{...game.penalties,[result.team]:game.penalties[result.team].map(row=>row.id===id?{...row,remainingMs:choice.afterMs}:row)}};
 }
+// A penalty entered by mistake never happened: no notice, no clock change and no
+// trace on the match sheet. Use it only for entry errors, not for a real release.
+export function discardPenalty(game, team, id) {
+  if(!game.penalties[team]?.some(row=>row.id===id)) return game;
+  // An untouched events array must stay the same array: an empty new one reads as a new match.
+  const events=(game.events||[]).filter(event=>event.penaltyId!==id);
+  return {...game, discardedPenaltyIds:[...(game.discardedPenaltyIds||[]),id],
+    penalties:{...game.penalties,[team]:game.penalties[team].filter(row=>row.id!==id)},
+    ...(events.length===(game.events||[]).length?{}:{events})};
+}
 export function recordGoal(game, team, details = {}) {
   if(game.auxiliary || game.scores[team]>=999) return game;
   const event={id:details.id,team,period:game.period,remainingMs:game.remainingMs,...details.clock,assistsConfirmed:Boolean(details.assistsConfirmed || details.assist1 || details.assist2),scorer:details.scorer?.trim()||'',
@@ -50,7 +60,9 @@ export function recordGoal(game, team, details = {}) {
 export function removeGoal(game, team) {
   if(game.scores[team]===0) return game;
   const goals=[...(game.goals||[])];
-  const index=goals.findLastIndex(goal=>goal.team===team);
+  // With per-period scoring the displayed score only counts this period's goals.
+  const index=goals.findLastIndex(goal=>goal.team===team&&(!game.settings.resetScoresEachPeriod||goal.period===game.period));
+  if(index<0&&game.settings.resetScoresEachPeriod) return game;
   if(index>=0)goals.splice(index,1);
   // Score corrections cannot silently reinstate a penalty after subsequent play.
   return {...game,scores:{...game.scores,[team]:game.scores[team]-1},goals};

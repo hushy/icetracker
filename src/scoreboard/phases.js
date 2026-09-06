@@ -22,6 +22,8 @@ export function toggleActiveClock(game) {
 
 export function prepareDialog(game, dialog) {
   if (dialog === 'note') return game;
+  // Correcting an entry error is bookkeeping: the clock never stops for it.
+  if (dialog?.discard) return game;
   const goalOrPenalty = Boolean(dialog?.goalTeam || dialog?.removeGoalTeam || dialog?.release ||
     (typeof dialog === 'string' && dialog.startsWith('penalty-')));
   return goalOrPenalty && !game.settings.autoPauseOnGoalPenalty ? game : pauseClocks(game);
