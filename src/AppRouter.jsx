@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import App from './App.jsx';
 import VoiceCommandDebug from './components/VoiceCommandDebug.jsx';
+import Scoreboard from './scoreboard/Scoreboard.jsx';
+import PublicDisplay from './scoreboard/PublicDisplay.jsx';
 
 /**
  * Simple router to toggle between main app and voice debug UI
@@ -27,6 +29,9 @@ export default function AppRouter() {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
+  const displayId = new URLSearchParams(window.location.search).get('display');
+  if (displayId) return <PublicDisplay id={displayId} />;
+
   if (showDebug) {
     return (
       <div>
@@ -47,6 +52,5 @@ export default function AppRouter() {
     );
   }
 
-  return <App />;
+  return new URLSearchParams(window.location.search).get('mode') === 'stats' ? <App /> : <Scoreboard />;
 }
-

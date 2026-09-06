@@ -1,0 +1,11 @@
+import {readdir,readFile,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+const files=(await readdir('dist',{recursive:true,withFileTypes:true})).filter(e=>e.isFile()&&e.name!=='sw.js').map(e=>(e.parentPath||e.path)+'/'+e.name).sort();
+const hash=createHash('sha256');for(const file of files)hash.update(await readFile(file));
+const assets=files.map(file=>file.replace(/^dist\//,''));
+await writeFile('dist/sw.js',`const PREFIX='icetracker-'+self.registration.scope;const CACHE=PREFIX+'-${hash.digest('hex').slice(0,12)}';const ASSETS=${JSON.stringify(assets)};const url=p=>new URL(p,self.registration.scope).href;
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS.map(url)))));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||!e.request.url.startsWith(self.registration.scope))return;const navigation=e.request.mode==='navigate';e.respondWith(caches.open(CACHE).then(async c=>{const cached=await c.match(navigation?url('index.html'):e.request);return cached||fetch(e.request);}));});
+`);
+console.log('Offline cache generated:',assets.length,'files');
