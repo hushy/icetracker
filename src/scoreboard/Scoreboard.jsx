@@ -17,7 +17,7 @@ import {eventClock,addMatchNote,periodLength} from './match-report.js';
 import { recordMatchEvents } from './match-events.js';
 import GameBoard from './GameBoard.jsx';
 import { prepareDialog, isClockRunning, startBreak, startTimeout, leaveAuxiliary, pauseClocks, toggleActiveClock } from './phases.js';
-import { powerPlayRecommendation, recordGoal, removeGoal, penaltyKindLabel, penaltyKinds } from './penalty-rules.js';
+import { powerPlayRecommendation, recordGoal, removeGoal, discardPenalty, penaltyKindLabel, penaltyKinds } from './penalty-rules.js';
 function Modal({
   title,
   children,
@@ -142,6 +142,8 @@ function Setup({
     </div><p className="field-help">{t("Period length applies to the next period or a new game. Use Edit clock to change the current clock.")}</p></fieldset>
     <label className="check-label"><input type="checkbox" checked={draft.autoPauseOnGoalPenalty} onChange={event => change('autoPauseOnGoalPenalty', event.target.checked)} />{t('Auto pause on goal/penalty')}</label>
     <label className="check-label"><input type="checkbox" checked={Boolean(draft.noAnimations)} onChange={event=>change('noAnimations',event.target.checked)}/>{t('No animations')}</label>
+    <label className="check-label"><input type="checkbox" checked={Boolean(draft.resetScoresEachPeriod)} onChange={event=>change('resetScoresEachPeriod',event.target.checked)}/>{t('Reset the score at each period')}</label>
+    <p className="field-help">{t('For categories scored period by period. Goals stay on the match sheet, which keeps the running total.')}</p>
     <fieldset><legend>{t("Horn & junior shifts")}</legend>
       <label>{t("Horn sound")}<select value={draft.hornSound} onChange={event => change('hornSound', event.target.value)}>{hornOptions.map(option => <option key={option.id} value={option.id}>{t(option.label)}</option>)}</select></label>
       <p className="field-help">{t(hornOptions.find(option => option.id === draft.hornSound)?.description || hornOptions[0].description)}</p>
@@ -401,6 +403,7 @@ export default function Scoreboard() {
       score:(team,delta)=>openModal(delta>0?{goalTeam:team}:{removeGoalTeam:team}),
       addPenalty:team=>openModal(`penalty-${team}`),
       release:(team,row)=>{if(row.remainingMs===0)update(value=>({...value,penalties:{...value.penalties,[team]:value.penalties[team].filter(item=>item.id!==row.id)}}));else openModal({release:row,team});},
+      discard:(team,row)=>openModal({discard:row,team}),
       startPenalty:(team,row)=>update(value=>({...value,penalties:{...value.penalties,[team]:value.penalties[team].map(item=>item.id===row.id?{...item,deferred:false}:item)}})),
       timeout:team=>openModal({timeoutTeam:team}),
       editClock:()=>openModal('clock'),
@@ -452,7 +455,7 @@ export default function Scoreboard() {
         }));
         setModal(null);
       }} />}
-    {modal === 'next' && <Modal title={finalPeriod ? t("Start an overtime period?") : t("Move to the next period?")} close={() => setModal(null)}><p>{t('The clock will reset to {minutes}:00. Scores and remaining penalty time carry over. Press Resume / start when play begins.', {
+    {modal === 'next' && <Modal title={finalPeriod ? t("Start an overtime period?") : t("Move to the next period?")} close={() => setModal(null)}><p>{t(game.settings.resetScoresEachPeriod ? 'The clock will reset to {minutes}:00 and the score returns to 0 – 0. Remaining penalty time carries over. Press Resume / start when play begins.' : 'The clock will reset to {minutes}:00. Scores and remaining penalty time carry over. Press Resume / start when play begins.', {
             minutes: game.settings.periodMinutes
           })}</p>{!ended && <p className="form-error">{t('There is still {time} on this period’s clock.', {
             time: formatTime(game.remainingMs)
@@ -460,7 +463,7 @@ export default function Scoreboard() {
             update(nextPeriod);
             setModal(null);
           }}>{t("Next period")}</button></div></Modal>}
-    {modal?.release && <Modal title={t("Release this penalty?")} close={() => setModal(null)}><p>{t('{player} has {time} remaining. Release after a goal or to correct a mistake.', {
+    {modal?.release && <Modal title={t("Release this penalty?")} close={() => setModal(null)}><p>{t('{player} has {time} remaining. Use this for an end of penalty decided by the referee: it is recorded on the match sheet and announced.', {
             player: modal.release.player ? t('Player #{player}', {
               player: modal.release.player
             }) : t('This penalty'),
@@ -475,5 +478,11 @@ export default function Scoreboard() {
             }));
             setModal(null);
           }}>{t("Release penalty")}</button></div></Modal>}
+    {modal?.discard && <Modal title={t('Remove an entry error?')} close={() => setModal(null)}><p>{t('{player} was entered by mistake. The penalty and its events leave the match sheet, with no announcement and no change to the clock.', {
+            player: modal.discard.player ? t('Player #{player}', {player: modal.discard.player}) : t('This penalty')
+          })}</p><p className="field-help">{t('For a penalty that really was served, use Release instead.')}</p><div className="modal-actions"><button className="secondary" onClick={() => setModal(null)}>{t("Cancel")}</button><button className="primary" onClick={() => {
+            update(value => discardPenalty(value, modal.team, modal.discard.id));
+            setModal(null);
+          }}>{t('Remove entry error')}</button></div></Modal>}
   </div></I18nContext.Provider>;
 }

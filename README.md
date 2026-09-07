@@ -12,10 +12,12 @@ The main **Scoreboard** keeps scores, penalties, clock and period controls toget
 - Default Français Volants navy/white theme, neutral alternative, and uploaded team/background images up to 1 MB each.
 - Game time, penalties and junior shifts advance together. Pause/resume with the large control or Space outside a control/dialog. Running countdowns show a green LIVE indicator. Paused countdowns show their wall-clock pause duration, shared with the public screen. The red warning becomes brighter and pulses faster after 15, 45 and 120 seconds (bounded at 0.75 seconds per pulse). Reduced-motion mode keeps a steady warning. Resume clears the pause duration; the next pause starts at zero.
 - Goal and penalty entry do not pause by default. **Auto pause on goal/penalty** in setup is opt-in. Other clock/setup/phase dialogs pause explicitly. Confirming a penalty starts it if play is running, unless it is marked waiting.
+- Each penalty row offers two distinct corrections. **Release** applies an end of penalty decided by the referee: it is recorded on the match sheet and announced. The **×** button removes a penalty entered by mistake: the row and all of its events leave the match sheet, nothing is announced, and the clock is never paused, including when auto pause is enabled. Undo restores a removed penalty.
 - A goal accepts an optional scorer and up to two optional assists. Confirmation updates the score. **Hide goal animation** suppresses the six-second public announcement for that goal only. Goal announcements now appear below the clock, keeping the time and scores visible. Penalty additions/starts and penalty endings have five-second announcements. A penalty ending on a goal is queued until the goal announcement finishes, then shown for its full duration. **No animations** in game setup hides all event announcements and disables scoreboard motion, including pause-warning pulsing; this preference is included in saved configurations. Events received while disabled do not replay when animations are enabled again.
 - **Break** is a general countdown before a game or between periods, replacing Warm-up. Match, penalty and shift clocks freeze during it. Return to the paused match explicitly. Old warm-up saves migrate to Break.
 - Each team has one confirmed 30-second timeout per game. It stays used across periods/refreshes; a new game resets it.
 - Period end freezes clocks and can sound a horn. Next period retains scores/penalties and resets game/shift clocks paused. Overtime duration follows the period setting unless manually edited.
+- **Reset the score at each period** in game setup clears the displayed score at every period change, for categories scored period by period. Goals stay on the match sheet, which keeps per-period results and the match total; the confirmation dialog states that the score returns to 0 – 0. The option belongs to saved configurations and is off by default.
 
 ## Undo, event corrections and presets
 
@@ -25,9 +27,9 @@ The **Match sheet** has three views:
 
 - **Events** shows goals, penalties, timeouts and internal notes. Enable **Full journal** for clock actions and penalty transitions, or export that journal with elapsed/remaining/local and entry times. Small screens use event cards with an accessible Edit button.
 - **To complete** groups missing player details, unconfirmed assists, possible duplicates, missing penalty ends and score discrepancies by event. Unknown information does not block export. “No assists” confirms an unassisted goal; leaving it unchecked allows completing the assists later.
-- **Preview / export** produces a transcription aid organized by team, with goals, penalties, cumulative match times, actual penalty start/end, assessed penalty-minute totals, period results, recorded period start/end local times and timeouts. Select a period for a partial report. CSV and landscape A4 Print / PDF use the selected period. This is an aid for completing the FFHG sheet, not the official form; rosters, signatures, official penalty codes, compound-sanction transcription and unrecorded statistics remain manual.
+- **Preview / export** produces a transcription aid organized by team, with goals, penalties, times counted inside each period, actual penalty start/end, assessed penalty-minute totals, period results, recorded period start/end local times and timeouts. Select a period for a partial report. CSV and landscape A4 Print / PDF use the selected period. This is an aid for completing the FFHG sheet, not the official form; rosters, signatures, official penalty codes, compound-sanction transcription and unrecorded statistics remain manual.
 
-Goal and penalty occurrence times are captured when the operator opens the form, independently of confirmation time. A non-waiting penalty timer starts on confirmation. **Served by** is optional and separate from the offending player. Each period's configured length is retained for cumulative time conversion. Missing historical period lengths stay unknown rather than being guessed.
+Goal and penalty occurrence times are captured when the operator opens the form, independently of confirmation time. A non-waiting penalty timer starts on confirmation. **Served by** is optional and separate from the offending player. Report times are counted inside their own period, next to the period number, as on the paper sheet; they are never added together across periods. A penalty starting and ending in different periods shows the period beside its start or end time. Each period's configured length is retained so clock corrections stay consistent. Missing historical period lengths stay unknown rather than being guessed.
 
 **Edit** changes the sheet and linked goal details, keeping previous values and the original entry timestamp in a correction history. Time editing is collapsed by default. Penalty edits do not alter live penalty timers or scores; the table de marque remains responsible for those. Corrections do not replay goal animations. **Note +** captures an internal timestamped note without pausing; notes are excluded from the transcription aid but retained in the journal and backup.
 
@@ -70,11 +72,14 @@ Use Node 22 or newer:
 npm ci
 npm run dev
 npm run test:scoreboard
+npm run test:browser
 npm run build
 npm run preview
 ```
 
 Development URL: http://localhost:3000/icetracker/. Build outputs `dist/`, including `sw.js`. Scoreboard tests use Node's built-in runner. Original statistics/voice Vitest files are preserved, but their undeclared dependencies are outside the scoreboard checks.
+
+`npm run test:browser` drives the built scoreboard in a real browser: it builds, inlines the bundle into `dist/preview.html` so `file://` works despite the `/icetracker/` base, and runs the scenarios in `tests/browser/` against an operator window and its public screen. `playwright-core` ships no browser of its own; the harness uses the Chrome or Chromium already installed, and `CHROME_PATH` overrides the search. Scenarios seed `localStorage` with a known match rather than clicking one together, and fail on any page error.
 
 Push the source to `hushy/icetracker` main and select **Settings → Pages → Source → GitHub Actions**. The included workflow tests, builds and deploys. Vite's base is `/icetracker/`; the deployed URL is https://hushy.github.io/icetracker/. See [GitHub Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
