@@ -129,4 +129,47 @@
 @media(max-width:550px){.ice-app .compact-board .penalty-row output{font-size:20px}.ice-app .compact-board .penalty-row .penalty-action{min-width:52px;padding:4px 6px}.ice-app .compact-board .penalty-row .penalty-discard{width:40px;min-width:40px}}
 .ice-app .compact-board .penalty-row .penalty-discard{width:auto;min-width:56px;padding:6px;font-size:12px}.period-score-label{display:block;color:#c6d8f3;font-size:12px;margin:2px 0 6px}
 @media(max-width:550px){.ice-app .compact-board .penalty-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}.penalty-row .penalty-action{grid-row:2;grid-column:1;justify-self:start}.penalty-row .penalty-discard{grid-row:2;grid-column:2}.period-score-label{font-size:10px}}
-.public-pause-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;color:#b8c8e4;animation:none}.public-pause-icon svg{width:18px;height:18px;stroke-width:2.5}
+.public-clock-state{display:inline-flex;align-items:center;justify-content:center;width:clamp(26px,2.4vw,44px);height:clamp(26px,2.4vw,44px);border-radius:50%;border:2px solid currentColor;animation:none}
+.public-clock-state svg{width:60%;height:60%;stroke-width:2.5}
+.public-clock-state.live{color:#6ef0ae;background:#09533433}
+.public-clock-state.paused{color:#b8c8e4;background:#ffffff0f}
+
+/* Public screen: the clock is a full-width header so the teams get the whole wall. */
+@media(min-width:701px){
+.public-display .compact-board .board-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:clamp(8px,1.6vh,20px) clamp(16px,2.5vw,48px);padding:clamp(6px,1.4vh,16px) clamp(12px,2vw,36px) clamp(10px,2vh,24px)}
+.public-display .compact-board .clock-panel{grid-column:1/-1;grid-row:1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:center;column-gap:clamp(16px,3vw,64px);row-gap:6px;padding:0 0 clamp(6px,1.2vh,14px);border:0;border-bottom:1px solid #ffffff1f;overflow:visible}
+.public-display .compact-board .clock-heading{min-height:0;flex:1 1 0;justify-content:flex-end}
+.public-display .compact-board .clock-status{flex:1 1 0;display:flex;justify-content:flex-start}
+.public-display .compact-board .team-panel.home{border-right:1px solid #ffffff14}
+.public-display .period-label{font-size:clamp(18px,2vw,40px)}
+.public-display .compact-board .game-clock{margin:0;font-size:clamp(88px,min(14vw,24vh),260px)}
+.public-display .compact-board .board-announcement{flex-basis:100%;overflow:visible}
+.public-display .compact-board .team-panel{grid-row:2}
+.public-display .compact-board .team-content h2{font-size:clamp(22px,2.6vw,50px);min-height:1.4em;max-height:1.4em}
+.public-display .compact-board .score{font-size:clamp(96px,min(15vw,30vh),300px)}
+.public-display .team-penalties .penalty-heading h3{font-size:clamp(12px,1.2vw,22px)}
+.public-display .compact-board .penalty-row strong{font-size:clamp(22px,2vw,40px)}
+.public-display .compact-board .penalty-row>div span{font-size:clamp(12px,1.1vw,20px)}
+.public-display .compact-board .penalty-row output{font-size:clamp(30px,2.8vw,56px)}
+.public-display .compact-board .score-timeout{font-size:clamp(13px,1.1vw,20px)}
+/* Announcements span the wall now, so their contents read across it instead of stacking. */
+.public-display .board-announcement .goal-celebration{padding:clamp(10px,1.5vh,24px) clamp(20px,2.5vw,48px)}
+.public-display .goal-celebration-card{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:clamp(16px,3vw,60px)}
+.public-display .goal-celebration-logo{width:clamp(52px,6vw,120px);height:auto;margin:0}
+.public-display .goal-celebration h1{font-size:clamp(46px,6vw,120px);margin:0}
+.public-display .goal-celebration-team,.public-display .goal-celebration-scorer,.public-display .goal-celebration-assists{font-size:clamp(15px,1.5vw,28px);margin:0}
+.public-display .goal-celebration-scorer strong,.public-display .goal-celebration-assists strong{font-size:clamp(22px,2.2vw,44px)}
+.public-display .board-announcement .penalty-notice{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:clamp(12px,2.5vw,48px);padding:clamp(8px,1.4vh,20px) clamp(16px,2.5vw,44px)}
+.public-display .penalty-notice-title{font-size:clamp(16px,1.8vw,34px)}
+.public-display .penalty-notice-player{font-size:clamp(26px,3vw,60px);margin:0}
+.public-display .penalty-notice-reason,.public-display .penalty-notice-time{font-size:clamp(16px,1.8vw,34px);margin:0}
+/* An announcement borrows its height from the clock and scores, never from the penalties. */
+.public-display .compact-board .board-grid:has(.board-announcement .goal-celebration),
+.public-display .compact-board .board-grid:has(.board-announcement .penalty-notice){--announcing:1}
+.public-display .compact-board .board-grid:has(.board-announcement .goal-celebration) .game-clock,
+.public-display .compact-board .board-grid:has(.board-announcement .penalty-notice) .game-clock{font-size:clamp(60px,min(9vw,15vh),170px)}
+.public-display .compact-board .board-grid:has(.board-announcement .goal-celebration) .score,
+.public-display .compact-board .board-grid:has(.board-announcement .penalty-notice) .score{font-size:clamp(64px,min(10vw,19vh),200px)}
+.public-display .compact-board .board-grid:has(.board-announcement .goal-celebration) .team-content h2,
+.public-display .compact-board .board-grid:has(.board-announcement .penalty-notice) .team-content h2{font-size:clamp(18px,2vw,36px)}
+}
