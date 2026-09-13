@@ -1,10 +1,10 @@
-import React from 'react';
+import React, {useEffect,useState} from 'react';
 import GoalCelebration from './GoalCelebration.jsx';
 import PenaltyAnnouncement from './PenaltyAnnouncement.jsx';
 import { penaltyReasonLabel } from './penalty-reasons.js';
 import Icon from './Icon.jsx';
 import {pauseWarning} from './pause-warning.js';
-import { formatTime } from './clock.js';
+import { formatTime,scorePeriodFor } from './clock.js';
 import { clubLogo } from './teams.js';
 import { teamDisplayName } from './youth.js';
 import { translator } from './i18n.js';
@@ -18,7 +18,15 @@ export default function GameBoard({ game, actions, toolbar, hornFlash = '', disc
   const remainingMs = active?.remainingMs ?? game.remainingMs;
   const running = isClockRunning(game);
   const ended = remainingMs === 0;
-  const pause = disconnected ? null : pauseWarning(game);
+  const [warningNow,setWarningNow]=useState(()=>Date.now());
+  const operator=Boolean(actions);
+  useEffect(()=>{
+    if(!operator||running||ended||disconnected)return;
+    setWarningNow(Date.now());
+    const timer=setInterval(()=>setWarningNow(Date.now()),250);
+    return()=>clearInterval(timer);
+  },[operator,running,ended,disconnected,game.pauseStartedAt]);
+  const pause = disconnected ? null : pauseWarning(game,warningNow);
   const finalPeriod = game.period >= game.settings.periods;
   const periodLabel = game.period > game.settings.periods ? t('OT {n}', {n:game.period-game.settings.periods}) : `${t('Period')} ${game.period}/${game.settings.periods}`;
   const timerLabel = active?.kind === 'break' ? t('Break') : active?.kind === 'timeout' ? t('Timeout · {team}', {team:teamDisplayName(game.settings,active.team,t)}) : '';
@@ -36,6 +44,7 @@ export default function GameBoard({ game, actions, toolbar, hornFlash = '', disc
             <output className={`score ${game.scores[team]>=100?'three-digits':''}`} aria-live="polite" aria-label={t('{team} score {score}',{team:name,score:game.scores[team]})}>{game.scores[team]}</output>
             {actions&&iconButton(t('Goal · {team}',{team:name}),'plus',()=>actions.score(team,1),{className:'score-step add-goal',disabled:Boolean(active)||game.scores[team]>=999})}
           </div>
+          {scorePeriodFor(game)!=null&&<small className="period-score-label">{t('Score of period {n}',{n:scorePeriodFor(game)})}</small>}
           <div className="score-timeout">
             {actions?<button className="timeout-button" aria-label={`${name} · ${timeoutLabel}`} disabled={Boolean(active)||game.timeoutsUsed?.[team]} onClick={()=>actions.timeout(team)}><Icon name={game.timeoutsUsed?.[team]?'check':'clock'}/>{timeoutLabel}</button>:<span className="timeout-status"><Icon name={game.timeoutsUsed?.[team]?'check':'clock'}/>{timeoutLabel}</span>}
           </div>
@@ -49,7 +58,7 @@ export default function GameBoard({ game, actions, toolbar, hornFlash = '', disc
           {!rows.length?<div className="penalty-empty" aria-label={t('No active penalties')}>—</div>:rows.map(row=>{
             const description=`${t(penaltyKindLabel(penaltyKind(row)))}${row.reason?` · ${t(penaltyReasonLabel(row.reason))}`:''}${row.coincidental?` · ${t('Coincidental')}`:''}${row.deferred?` · ${t('Waiting')}`:''}`;
             const action=t(row.deferred?'Start':row.remainingMs===0?'Clear':'Release');
-            return <div className={`penalty-row ${row.remainingMs===0?'expired':''}`} key={row.id} title={description}><div><strong>{row.player?`#${row.player}`:t('TEAM')}</strong>{row.servedBy&&<span>{t('Served by')} #{row.servedBy}</span>}{(row.coincidental||row.deferred)&&<span>{t(row.deferred?'Waiting':'Coincidental')}</span>}{penaltyReasonLabel(row.reason)&&<span className="penalty-reason">{t(penaltyReasonLabel(row.reason))}</span>}<span className="visually-hidden">{description}</span></div><output>{row.remainingMs===0?t('SERVED'):formatTime(row.remainingMs)}</output>{actions&&<button className="penalty-action" aria-label={t('{action} penalty for {team}, player {player}',{action,team:name,player:row.player||t('TEAM')})} onClick={()=>row.deferred?actions.startPenalty(team,row):actions.release(team,row)}>{action}</button>}{actions&&<button className="penalty-discard" title={t('Entry error · remove')} aria-label={t('Remove the penalty entered by mistake for {team}, player {player}',{team:name,player:row.player||t('TEAM')})} onClick={()=>actions.discard(team,row)}><Icon name="close" size={16}/></button>}</div>;
+            return <div className={`penalty-row ${row.remainingMs===0?'expired':''}`} key={row.id} title={description}><div><strong>{row.player?`#${row.player}`:t('TEAM')}</strong>{row.servedBy&&<span>{t('Served by')} #{row.servedBy}</span>}{(row.coincidental||row.deferred)&&<span>{t(row.deferred?'Waiting':'Coincidental')}</span>}{penaltyReasonLabel(row.reason)&&<span className="penalty-reason">{t(penaltyReasonLabel(row.reason))}</span>}<span className="visually-hidden">{description}</span></div><output>{row.remainingMs===0?t('SERVED'):formatTime(row.remainingMs)}</output>{actions&&<button className="penalty-action" aria-label={t('{action} penalty for {team}, player {player}',{action,team:name,player:row.player||t('TEAM')})} onClick={()=>row.deferred?actions.startPenalty(team,row):actions.release(team,row)}>{action}</button>}{actions&&<button className="penalty-discard" title={t('Entry error · remove')} aria-label={t('Remove the penalty entered by mistake for {team}, player {player}',{team:name,player:row.player||t('TEAM')})} onClick={()=>actions.discard(team,row)}>{t('Entry error')}</button>}</div>;
           })}
         </div>
       </section>
@@ -62,7 +71,7 @@ export default function GameBoard({ game, actions, toolbar, hornFlash = '', disc
       <div className="clock-heading"><span className="period-label">{periodLabel}</span>{actions&&<button className="clock-edit" title={t('Edit clock & period')} aria-label={t('Edit clock & period')} onClick={actions.editClock}><Icon name="settings" size={16}/>{t('Edit')}</button>}</div>
       {(hornFlash||timerLabel)&&<span className="timer-phase">{t(hornFlash)||timerLabel}</span>}
       <output className={`game-clock ${remainingMs<=60000?'last-minute':''}`}>{formatTime(remainingMs)}</output>
-      <div className="clock-status">{running&&!disconnected&&<div className="clock-live" role="status"><span className="live-dot" aria-hidden="true"/>{t('LIVE')}</div>}{pause&&<div className={`pause-warning pause-level-${pause.level}`} role="status" aria-live="off"><span aria-hidden="true" className="pause-warning-dot"/>{t(pause.seconds===1?'Clock paused for {seconds} second':'Clock paused for {seconds} seconds',{seconds:pause.seconds})}</div>}{ended&&<div className="period-ended" role="status">{t(active?'Countdown complete':finalPeriod?'GAME COMPLETE':'PERIOD COMPLETE')}</div>}</div>
+      <div className="clock-status">{actions&&running&&!disconnected&&<div className="clock-live" role="status"><span className="live-dot" aria-hidden="true"/>{t('LIVE')}</div>}{!actions&&!disconnected&&!ended&&<span className={`public-clock-state ${running?'live':'paused'}`} role="img" aria-label={t(running?'LIVE':'Clock paused')}><Icon name={running?'play':'pause'} size={18}/></span>}{pause&&actions&&<div className={`pause-warning pause-level-${pause.level}`} role="status" aria-live="off"><span aria-hidden="true" className="pause-warning-dot"/>{t(pause.seconds===1?'Clock paused for {seconds} second':'Clock paused for {seconds} seconds',{seconds:pause.seconds})}</div>}{ended&&<div className="period-ended" role="status">{t(active?'Countdown complete':finalPeriod?'GAME COMPLETE':'PERIOD COMPLETE')}</div>}</div>
       {active&&<div className="match-clock-kept">{t('Match clock · {time}',{time:formatTime(game.remainingMs)})}</div>}
       {game.settings.shiftEnabled&&<div className="board-shift" title={t('Horn every {seconds} seconds of game time',{seconds:game.settings.shiftSeconds})}><Icon name="horn"/><output aria-label={t('NEXT HORN')}>{formatTime(game.shiftRemainingMs)}</output>{actions&&<button className="shift-reset" title={t('Restart shift timer')} aria-label={t('Restart shift timer')} onClick={actions.restartShift}><Icon name="reset"/>{t('Restart')}</button>}</div>}
       <div className="board-announcement">{visibleGoal&&<GoalCelebration key={visibleGoal.id} goal={visibleGoal} settings={game.settings}/>}<PenaltyAnnouncement game={game} disconnected={disconnected} suspended={Boolean(visibleGoal)}/></div>

@@ -1,5 +1,5 @@
 import React,{useState} from 'react';
-import {periodLength} from './match-report.js';
+import {periodLength,reportModel} from './match-report.js';
 import {penaltyReasons,penaltyReasonLabel} from './penalty-reasons.js';
 import {useI18n} from './i18n.js';
 import {formatTime,parseTime} from './clock.js';
@@ -7,7 +7,8 @@ import {PRESETS_KEY,presetSettings,readPresets} from './management.js';
 const localInput=ms=>{if(ms==null)return '';const d=new Date(ms);return new Date(ms-d.getTimezoneOffset()*60000).toISOString().slice(0,19);};
 export function EventEditor({event,game,save,close,Frame}){
  const t=useI18n();
- const [draft,setDraft]=useState({...event,up:event.elapsedMs==null?'':formatTime(Math.floor(event.elapsedMs/1000)*1000),down:formatTime(event.remainingMs),local:localInput(event.occurredAt),assist1:event.assists?.[0]||'',assist2:event.assists?.[1]||'',startOverride:event.startOverrideMs==null?'':formatTime(event.startOverrideMs),endOverride:event.endOverrideMs==null?'':formatTime(event.endOverrideMs)});
+ const timing=event.type==='Penalty added'?reportModel(game).penalties.find(row=>row.id===event.id):null;
+ const [draft,setDraft]=useState({...event,up:event.elapsedMs==null?'':formatTime(Math.floor(event.elapsedMs/1000)*1000),down:formatTime(event.remainingMs),local:localInput(event.occurredAt),assist1:event.assists?.[0]||'',assist2:event.assists?.[1]||'',startOverride:event.startOverrideMs==null?'':(timing?.startMs==null?'':formatTime(timing.startMs)),endOverride:event.endOverrideMs==null?'':(timing?.endMs==null?'':formatTime(timing.endMs))});
  const [error,setError]=useState('');
  const change=(key,value)=>setDraft(old=>({...old,[key]:value}));
  function changeRemaining(value) {
@@ -23,7 +24,7 @@ export function EventEditor({event,game,save,close,Frame}){
    if(remainingMs==null||(draft.up&&elapsedMs==null)||(draft.local&&!Number.isFinite(occurredAt))||(length!=null&&elapsedMs!=null&&Math.abs(length-remainingMs-elapsedMs)>1000)){setError('Check the event times.');return;}
    if(new Set(players).size!==players.length){setError('Scorer and assists must be different players.');return;}
    if(event.type==='Penalty added'&&(!parseTime(draft.label||'')||parseTime(draft.label)>5999000)){setError('Enter a duration between 00:01 and 99:59.');return;}
-   save({period:Number(draft.period),remainingMs,elapsedMs,occurredAt,scorer:(draft.scorer||'').trim(),assists:[draft.assist1,draft.assist2].map(value=>value.trim()).filter(Boolean),assistsConfirmed:Boolean(draft.assistsConfirmed||draft.assist1||draft.assist2),player:(draft.player||'').trim(),servedBy:(draft.servedBy||'').trim(),reason:draft.reason||'',...(event.label!=null?{label:draft.label}:{}),...(event.type==='Match note'?{note:(draft.note||'').trim()}:{}),duplicateChecked:Boolean(draft.duplicateChecked),...(event.type==='Penalty added'?{startOverrideMs:draft.startOverride?parseTime(draft.startOverride):null,endOverrideMs:draft.endOverride?parseTime(draft.endOverride):null}:{})});
+   save({period:Number(draft.period),remainingMs,elapsedMs,occurredAt,scorer:(draft.scorer||'').trim(),assists:[draft.assist1,draft.assist2].map(value=>value.trim()).filter(Boolean),assistsConfirmed:Boolean(draft.assistsConfirmed||draft.assist1||draft.assist2),player:(draft.player||'').trim(),servedBy:(draft.servedBy||'').trim(),reason:draft.reason||'',...(event.label!=null?{label:draft.label}:{}),...(event.type==='Match note'?{note:(draft.note||'').trim()}:{}),duplicateChecked:Boolean(draft.duplicateChecked),...(event.type==='Penalty added'?{penaltyTimingBasis:'period',startOverrideMs:draft.startOverride?parseTime(draft.startOverride):null,endOverrideMs:draft.endOverride?parseTime(draft.endOverride):null}:{})});
  }
  return <Frame title={t('Edit event')} close={close}><form onSubmit={submit}>
  <p className="muted">{t(event.type)} · {t('Period')} {event.period} · {formatTime(event.remainingMs)}</p>

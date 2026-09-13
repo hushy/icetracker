@@ -492,6 +492,7 @@ test('an entry error takes the penalty and its whole trace off the sheet, silent
   assert.equal(game.events.filter(e => e.penaltyId === 'p1').length, 1);
   const corrected = recordMatchEvents(game, discardPenalty(game, 'home', 'p1'), 9000);
   assert.deepEqual(corrected.penalties.home, []);
+  assert.deepEqual(corrected.events, [], 'even the last penalty disappears without a replacement event');
   assert.equal(corrected.events.some(e => e.penaltyId === 'p1'), false);
   assert.equal(corrected.events.some(e => e.type === 'Penalty ended'), false);
   assert.equal(reportModel(corrected).penalties.length, 0);
@@ -538,4 +539,13 @@ test('removing a goal under per-period scoring only reaches this period', () => 
   const cleared = removeGoal(game, 'home');
   assert.equal(cleared.scores.home, 0);
   assert.deepEqual(cleared.goals.map(goal => goal.id), ['g1']);
+});
+test('switching per-period scoring takes effect at the next period without false score warnings',()=>{
+ let game=createGame();game=recordMatchEvents(game,recordGoal(game,'home',{id:'a',scorer:'12',assistsConfirmed:true}),1000);game=recordMatchEvents(game,nextPeriod(game),2000);
+ game={...game,settings:{...game.settings,resetScoresEachPeriod:true}};
+ assert.equal(reviewIssues(game).some(e=>e.message==='Score and recorded goals differ'),false);
+ game=recordMatchEvents(game,nextPeriod(game),3000);assert.equal(game.scores.home,0);assert.equal(game.scorePeriod,3);
+ game={...game,settings:{...game.settings,resetScoresEachPeriod:false}};
+ assert.equal(reviewIssues(game).some(e=>e.message==='Score and recorded goals differ'),false);
+ game=recordMatchEvents(game,nextPeriod(game),4000);assert.equal(game.scores.home,1);assert.equal(game.scorePeriod,null);
 });

@@ -1,4 +1,4 @@
-import { formatTime, parseTime, restoreGame } from './clock.js';
+import { formatTime, parseTime, restoreGame, scorePeriodFor } from './clock.js';
 import {penaltyReasonLabel as reasonLabel} from './penalty-reasons.js';
 
 export const elapsedTime = ms => ms == null ? '—' : formatTime(Math.floor(ms / 1000) * 1000);
@@ -8,11 +8,22 @@ export function periodLength(game, period) {
   const event = game.events.find(e => e.period === period && e.elapsedMs != null);
   return event ? event.elapsedMs + event.remainingMs : null;
 }
-// FFHG sheets read time inside the period next to the period number. Adding the
-// periods together is what the paper sheet never does.
+// The app report displays elapsed time within each period, as requested.
 export const periodElapsed = event => event?.elapsedMs ?? null;
 export function eventClock(game, now = Date.now()) {
   return { period: game.period, remainingMs: game.remainingMs, elapsedMs: game.periodElapsedMs, occurredAt: now };
+}
+function penaltyOverride(game, event, value, period) {
+  if(value==null || event.penaltyTimingBasis==='period')return value;
+  // Older backups stored corrections in cumulative match time.
+  let offset=0;
+  for(let p=1;p<period;p++){const length=periodLength(game,p);if(length==null)return null;offset+=length;}
+  return value>=offset?value-offset:null;
+}
+export function penaltyTimeLabel(row, side, t) {
+  const ms=row[side+'Ms'],period=row[side+'Period'];
+  if(ms==null)return '—';
+  return (period!==row.period?`${t('Period')} ${period} · `:'')+elapsedTime(ms);
 }
 export function reportModel(game, selectedPeriod = '') {
   const inPeriod = e => !selectedPeriod || e.period === Number(selectedPeriod);
@@ -23,7 +34,7 @@ export function reportModel(game, selectedPeriod = '') {
     const related = game.events.filter(item => item.penaltyId && item.penaltyId === e.penaltyId && !item.voided);
     const start = e.deferred ? related.find(item => item.type === 'Penalty started') : e.startedClock || e;
     const end = related.find(item => ['Penalty served', 'Penalty ended'].includes(item.type));
-    return { ...e, start, end, startMs: e.startOverrideMs ?? periodElapsed(start), endMs: e.endOverrideMs ?? periodElapsed(end),
+    return { ...e, start, end, startMs: penaltyOverride(game,e,e.startOverrideMs,start?.period??e.period) ?? periodElapsed(start), endMs: penaltyOverride(game,e,e.endOverrideMs,end?.period??e.period) ?? periodElapsed(end),
       startPeriod: start?.period ?? e.period, endPeriod: end?.period ?? e.period, durationMs: parseTime(e.label || '') };
   });
   const periods = [...new Set([game.period, ...game.events.map(e => e.period)])].sort((a,b) => a-b);
@@ -63,7 +74,7 @@ export function reviewIssues(game) {
     if (duplicate && !e.duplicateChecked) push(e, 'Possible duplicate');
   }
   const scored = team => report.goals.filter(e => e.team === team &&
-    (!game.settings.resetScoresEachPeriod || e.period === game.period)).length;
+    (scorePeriodFor(game)==null || e.period === scorePeriodFor(game))).length;
   for (const team of ['home','away']) if (scored(team) !== game.scores[team]) {
     issues.push({ id:`score-${team}`,team,message:'Score and recorded goals differ' });
   }
@@ -101,13 +112,13 @@ export function downloadFile(text, filename, type='application/json') {
 }
 export function reportCsv(game, selectedPeriod, t, teamName) {
   const report=reportModel(game,selectedPeriod);
-  const rows=[[t('Match transcription aid')],[teamName('home'),game.scores.home,teamName('away'),game.scores.away],[t('Period'),selectedPeriod||t('All periods')],
+  const rows=[[t('Match transcription aid')],[scorePeriodFor(game)==null?t('Scoreboard'):t('Score of period {n}',{n:scorePeriodFor(game)}),teamName('home'),game.scores.home,teamName('away'),game.scores.away],[t('Period'),selectedPeriod||t('All periods')],
     [t('Date'),game.matchInfo?.date||'',t('Scheduled time'),game.matchInfo?.scheduledTime||'',t('Venue'),game.matchInfo?.venue||'',t('Competition'),game.matchInfo?.competition||'',t('Match number'),game.matchInfo?.number||'']];
   for (const team of ['home','away']) {
     rows.push([], [teamName(team),t('Goals')],['#',t('Period'),t('Period elapsed'),t('Scorer'),t('Assists')]);
     for (const e of report.goals.filter(e=>e.team===team)) rows.push([reportModel(game).goals.filter(g=>g.team===team).findIndex(g=>g.id===e.id)+1,e.period,elapsedTime(periodElapsed(e)),e.scorer||'',(e.assists||[]).join(' / ')]);
     rows.push([], [teamName(team),t('Penalties')],[t('Period'),t('Period elapsed'),t('Player'),t('Assessed minutes'),t('Reason'),t('Start time'),t('End'),t('Served by (optional)')]);
-    for (const e of report.penalties.filter(e=>e.team===team)) rows.push([e.period,elapsedTime(periodElapsed(e)),e.kind==='bench'?'E':e.player||'',e.durationMs==null?'':e.durationMs/60000,t(reasonLabel(e.reason)),e.startMs==null?'':elapsedTime(e.startMs),e.endMs==null?'':elapsedTime(e.endMs),e.servedBy||'']);
+    for (const e of report.penalties.filter(e=>e.team===team)) rows.push([e.period,elapsedTime(periodElapsed(e)),e.kind==='bench'?'E':e.player||'',e.durationMs==null?'':e.durationMs/60000,t(reasonLabel(e.reason)),e.startMs==null?'':penaltyTimeLabel(e,'start',t),e.endMs==null?'':penaltyTimeLabel(e,'end',t),e.servedBy||'']);
   }
   rows.push([], [t('Period'),teamName('home')+' '+t('Goals'),teamName('away')+' '+t('Goals'),teamName('home')+' '+t('Assessed minutes'),teamName('away')+' '+t('Assessed minutes'),t('Start time'),t('End')]);
   for (const row of report.totals) rows.push([row.period,row.home.goals,row.away.goals,row.home.penaltyMs/60000,row.away.penaltyMs/60000,localTime(row.start,game),localTime(row.end,game)]);
