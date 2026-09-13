@@ -8,9 +8,10 @@ export const defaultSettings = {
 };
 export function createGame(settings = defaultSettings) {
   return { settings: { ...settings }, remainingMs: settings.periodMinutes * 60000,
-    running: false, pauseStartedAt: Date.now(), period: 1, periodElapsedMs: 0, periodLengths: {1: settings.periodMinutes * 60000}, matchInfo: {date: new Date().toLocaleDateString('en-CA')}, events: [], scores: { home: 0, away: 0 },
+    running: false, pauseStartedAt: Date.now(), scorePeriod: settings.resetScoresEachPeriod ? 1 : null, period: 1, periodElapsedMs: 0, periodLengths: {1: settings.periodMinutes * 60000}, matchInfo: {date: new Date().toLocaleDateString('en-CA')}, events: [], scores: { home: 0, away: 0 },
     penalties: { home: [], away: [] }, auxiliary: null, timeoutsUsed: {home:false,away:false}, goals: [], shiftRemainingMs: settings.shiftSeconds * 1000 };
 }
+export const scorePeriodFor = game => game.scorePeriod === undefined ? (game.settings.resetScoresEachPeriod ? game.period : null) : game.scorePeriod;
 export function formatTime(ms) {
   const seconds = Math.ceil(Math.max(0, ms) / 1000);
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
@@ -43,7 +44,8 @@ export function advanceGame(game, elapsedMs) {
 export function nextPeriod(game) {
   return { ...game, periodLengths: {...game.periodLengths, [game.period]: game.periodLengths?.[game.period] ?? game.periodElapsedMs + game.remainingMs, [game.period + 1]: game.settings.periodMinutes * 60000}, period: game.period + 1, periodElapsedMs: 0, remainingMs: game.settings.periodMinutes * 60000,
     // Some youth categories score each period on its own; goals stay on the sheet.
-    scores: game.settings.resetScoresEachPeriod ? { home: 0, away: 0 } : game.scores,
+    scores: game.settings.resetScoresEachPeriod ? { home: 0, away: 0 } : scorePeriodFor(game)==null ? game.scores : {home:game.goals.filter(g=>g.team==='home').length,away:game.goals.filter(g=>g.team==='away').length},
+    scorePeriod: game.settings.resetScoresEachPeriod ? game.period+1 : null,
     running: false, auxiliary: null, shiftRemainingMs: game.settings.shiftSeconds * 1000 };
 }
 export function parseTime(value) {
@@ -93,6 +95,6 @@ export function restoreGame(raw) {
     const events = Array.isArray(data.events) ? data.events.filter(event=>event && typeof event.id==='string' && typeof event.type==='string' && Number.isFinite(event.remainingMs) && Number.isFinite(event.period)) : goals.map(goal=>({...goal,type:'Goal',elapsedMs:null,occurredAt:null}));
     const activeWasRunning = data.auxiliary ? data.auxiliary.running : data.running;
     const pauseStartedAt = (auxiliary?.remainingMs ?? data.remainingMs) <= 0 ? null : !activeWasRunning && Number.isFinite(data.pauseStartedAt) ? Math.min(Date.now(),data.pauseStartedAt) : Date.now();
-    return { ...data, settings, running: false, pauseStartedAt, auxiliary, timeoutsUsed, goals, periodElapsedMs, events };
+    return { ...data, scorePeriod: data.scorePeriod === null ? null : Number.isInteger(data.scorePeriod)&&data.scorePeriod>0 ? data.scorePeriod : (settings.resetScoresEachPeriod ? data.period : null), settings, running: false, pauseStartedAt, auxiliary, timeoutsUsed, goals, periodElapsedMs, events };
   } catch { return null; }
 }

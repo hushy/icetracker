@@ -2,7 +2,7 @@ import {trackPause} from './pause-warning.js';
 // Append only transitions, never timer ticks or synchronization heartbeats.
 export function recordMatchEvents(before, after, now = Date.now(), ticking = false) {
   after = trackPause(before, after, now);
-  const reset = after.events !== before.events && after.events?.length === 0;
+  const reset = !after.discardedPenaltyIds?.length && after.events !== before.events && after.events?.length === 0;
   const events = reset ? [] : [...(after.events || [])];
   const additions = [];
   const add = (type, details = {}, clock = after, occurredAt = now) => additions.push({

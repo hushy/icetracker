@@ -127,3 +127,6 @@
 
 /* Release and entry-error keep their touch targets but share one line on a phone. */
 @media(max-width:550px){.ice-app .compact-board .penalty-row output{font-size:20px}.ice-app .compact-board .penalty-row .penalty-action{min-width:52px;padding:4px 6px}.ice-app .compact-board .penalty-row .penalty-discard{width:40px;min-width:40px}}
+.ice-app .compact-board .penalty-row .penalty-discard{width:auto;min-width:56px;padding:6px;font-size:12px}.period-score-label{display:block;color:#c6d8f3;font-size:12px;margin:2px 0 6px}
+@media(max-width:550px){.ice-app .compact-board .penalty-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}.penalty-row .penalty-action{grid-row:2;grid-column:1;justify-self:start}.penalty-row .penalty-discard{grid-row:2;grid-column:2}.period-score-label{font-size:10px}}
+.public-pause-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;color:#b8c8e4;animation:none}.public-pause-icon svg{width:18px;height:18px;stroke-width:2.5}

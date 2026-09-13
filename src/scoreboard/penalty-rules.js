@@ -1,3 +1,4 @@
+import {scorePeriodFor} from './clock.js';
 export const penaltyKinds = ['minor', 'bench', 'double', 'major', 'misconduct', 'custom'];
 export function penaltyKind(row) {
   if (penaltyKinds.includes(row.kind)) return row.kind;
@@ -61,8 +62,8 @@ export function removeGoal(game, team) {
   if(game.scores[team]===0) return game;
   const goals=[...(game.goals||[])];
   // With per-period scoring the displayed score only counts this period's goals.
-  const index=goals.findLastIndex(goal=>goal.team===team&&(!game.settings.resetScoresEachPeriod||goal.period===game.period));
-  if(index<0&&game.settings.resetScoresEachPeriod) return game;
+  const index=goals.findLastIndex(goal=>goal.team===team&&(scorePeriodFor(game)==null||goal.period===scorePeriodFor(game)));
+  if(index<0&&scorePeriodFor(game)!=null) return game;
   if(index>=0)goals.splice(index,1);
   // Score corrections cannot silently reinstate a penalty after subsequent play.
   return {...game,scores:{...game.scores,[team]:game.scores[team]-1},goals};
