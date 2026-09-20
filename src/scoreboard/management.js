@@ -4,7 +4,7 @@ import { formatTime, createGame, restoreGame } from './clock.js';
 import { translator } from './i18n.js';
 import { teamDisplayName } from './youth.js';
 export const PRESETS_KEY='icetracker-presets-v1';
-const presetKeys=['periodMinutes','periods','shiftEnabled','shiftSeconds','endHorn','volume','hornSound','breakMinutes','autoPauseOnGoalPenalty','noAnimations','resetScoresEachPeriod'];
+const presetKeys=['periodMinutes','periods','shiftEnabled','shiftSeconds','endHorn','breakMinutes','autoPauseOnGoalPenalty','noAnimations','resetScoresEachPeriod'];
 export const presetSettings=settings=>Object.fromEntries(presetKeys.map(key=>[key,settings[key]]));
 export function newMatch(game, settings = game.settings) {
   const fresh=restoreGame(JSON.stringify(createGame(settings)));

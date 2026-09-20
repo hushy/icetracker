@@ -1,15 +1,16 @@
-import { DEFAULT_HORN, normalizeHorn } from './horn-options.js';
+import { DEFAULT_HORN, HORN_VOLUME } from './horn-options.js';
 import { normalizeCategory } from './youth.js';
 export const STORAGE_KEY = 'icetracker-scoreboard-v1';
 export const defaultSettings = {
   home: 'HOME', away: 'AWAY', homeLogo: '', awayLogo: '', background: '',
   periodMinutes: 20, periods: 3, shiftEnabled: false, shiftSeconds: 60,
-  noAnimations: false, resetScoresEachPeriod: false, keepAwake: true, keepAwakePreferenceSet: false, autoPauseOnGoalPenalty: false, endHorn: true, volume: 70, language: 'en', theme: 'volants', hornSound: DEFAULT_HORN, homeClub: '', awayClub: '', homeCategory: '', awayCategory: '', breakMinutes: 5,
+  noAnimations: false, resetScoresEachPeriod: false, keepAwake: true, keepAwakePreferenceSet: false, autoPauseOnGoalPenalty: false, endHorn: true, volume: HORN_VOLUME, language: 'en', theme: 'volants', hornSound: DEFAULT_HORN, homeClub: '', awayClub: '', homeCategory: '', awayCategory: '', breakMinutes: 5,
 };
 export function createGame(settings = defaultSettings) {
-  return { settings: { ...settings }, remainingMs: settings.periodMinutes * 60000,
-    running: false, pauseStartedAt: Date.now(), scorePeriod: settings.resetScoresEachPeriod ? 1 : null, period: 1, periodElapsedMs: 0, periodLengths: {1: settings.periodMinutes * 60000}, matchInfo: {date: new Date().toLocaleDateString('en-CA')}, events: [], scores: { home: 0, away: 0 },
-    penalties: { home: [], away: [] }, auxiliary: null, timeoutsUsed: {home:false,away:false}, goals: [], shiftRemainingMs: settings.shiftSeconds * 1000 };
+  const nextSettings={...settings,hornSound:DEFAULT_HORN,volume:HORN_VOLUME};
+  return { settings: nextSettings, remainingMs: nextSettings.periodMinutes * 60000,
+    running: false, pauseStartedAt: Date.now(), scorePeriod: nextSettings.resetScoresEachPeriod ? 1 : null, period: 1, periodElapsedMs: 0, periodLengths: {1: nextSettings.periodMinutes * 60000}, matchInfo: {date: new Date().toLocaleDateString('en-CA')}, events: [], scores: { home: 0, away: 0 },
+    penalties: { home: [], away: [] }, auxiliary: null, timeoutsUsed: {home:false,away:false}, goals: [], shiftRemainingMs: nextSettings.shiftSeconds * 1000 };
 }
 export const scorePeriodFor = game => game.scorePeriod === undefined ? (game.settings.resetScoresEachPeriod ? game.period : null) : game.scorePeriod;
 export function formatTime(ms) {
@@ -65,10 +66,11 @@ export function restoreGame(raw) {
     settings.autoPauseOnGoalPenalty = settings.autoPauseOnGoalPenalty === true;
     settings.language = settings.language === 'fr' ? 'fr' : 'en';
     settings.theme = settings.theme === 'neutral' ? 'neutral' : 'volants';
-    settings.hornSound = normalizeHorn(settings.hornSound);
+    settings.hornSound = DEFAULT_HORN;
+    settings.volume = HORN_VOLUME;
     settings.breakMinutes = Number.isFinite(settings.breakMinutes) && settings.breakMinutes >= 1 && settings.breakMinutes <= 99 ? settings.breakMinutes : 5;
     for (const team of ['home', 'away']) settings[`${team}Category`] = normalizeCategory(settings[`${team}Category`]);
-    for (const [key, min, max] of [['periodMinutes', 1, 99], ['periods', 1, 9], ['shiftSeconds', 5, 600], ['volume', 0, 100]]) {
+    for (const [key, min, max] of [['periodMinutes', 1, 99], ['periods', 1, 9], ['shiftSeconds', 5, 600]]) {
       if (!Number.isFinite(settings[key]) || settings[key] < min || settings[key] > max) return null;
     }
     for (const key of ['home', 'away']) if (typeof settings[key] !== 'string' || !settings[key].trim()) return null;

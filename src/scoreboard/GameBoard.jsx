@@ -38,7 +38,7 @@ export default function GameBoard({ game, actions, toolbar, hornFlash = '', disc
     return <section className={`team-panel ${team}`} aria-label={t('{team} team',{team:name})}>
       <div className="team-score-area">
         {clubLogo(game.settings,team)&&<img className="team-art" src={clubLogo(game.settings,team)} alt=""/>}
-        <div className="team-content"><h2 title={name}>{name}</h2>
+        <div className="team-content"><h2 title={name}>{actions?<button className="team-name-edit" onClick={()=>actions.editTeam(team)} title={t('Edit {team}',{team:name})} aria-label={t('Edit {team}',{team:name})}><span>{name}</span><Icon name="edit" size={15}/></button>:name}</h2>
           <div className="score-line">
             {actions&&iconButton(t('Subtract goal for {team}',{team:name}),'minus',()=>actions.score(team,-1),{className:'score-step subtract',disabled:game.scores[team]===0})}
             <output className={`score ${game.scores[team]>=100?'three-digits':''}`} aria-live="polite" aria-label={t('{team} score {score}',{team:name,score:game.scores[team]})}>{game.scores[team]}</output>

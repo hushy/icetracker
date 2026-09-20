@@ -1,22 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { STORAGE_KEY, defaultSettings, createGame, advanceGame, formatTime, nextPeriod, parseTime, restoreGame } from './clock.js';
+import { STORAGE_KEY, createGame, advanceGame, formatTime, nextPeriod, parseTime, restoreGame } from './clock.js';
 import { playHorn, unlockAudio } from './horn.js';
-import { hornOptions } from './horn-options.js';
+import { industrialHorn } from './horn-options.js';
 import './scoreboard.css';
 import { I18nContext, translator, useI18n } from './i18n.js';
 import { clubs, clubLogo, selectClub } from './teams.js';
 import { youthCategories, teamDisplayName } from './youth.js';
 import { useOperatorDisplay } from './display-sync.js';
+import { useExtendedScreen, useArenaScreen } from './screens.js';
 import { penaltyReasons } from './penalty-reasons.js';
-import { EventEditor, PresetManager, NewMatchChooser } from './ManagementForms.jsx';
+import { EventEditor, PresetPanel, NewMatchChooser } from './ManagementForms.jsx';
 import { undoGame, editMatchEvent, newMatch } from './management.js';
 import { useWakeLock, useOffline } from './device-support.js';
 import Icon from './Icon.jsx';
 import MatchSheet from './MatchSheet.jsx';
-import {eventClock,addMatchNote,periodLength} from './match-report.js';
+import {eventClock,addMatchNote} from './match-report.js';
+import { applyClockEdit } from './quick-edit.js';
 import { recordMatchEvents } from './match-events.js';
 import GameBoard from './GameBoard.jsx';
-import { prepareDialog, isClockRunning, startBreak, startTimeout, leaveAuxiliary, pauseClocks, toggleActiveClock } from './phases.js';
+import { prepareDialog, isClockRunning, startBreak, startTimeout, leaveAuxiliary, toggleActiveClock } from './phases.js';
 import { powerPlayRecommendation, recordGoal, removeGoal, discardPenalty, penaltyKindLabel, penaltyKinds } from './penalty-rules.js';
 function Modal({
   title,
@@ -97,6 +99,7 @@ function Setup({
   save,
   close,
   testHorn,
+  device,
   newMatchSetup = false
 }) {
   const t = useI18n();
@@ -118,8 +121,8 @@ function Setup({
         away: draft.away.trim() || t("AWAY")
       }, newGame);
     }}>
-    <p className="muted">{t("The game is paused while you set up.")}</p>
-    <div className="form-grid">
+    <p className="muted">{t("Play continues while you set up. Changes apply when you save.")}</p>
+    <details className="form-disclosure" open={newMatchSetup}><summary>{t('Teams')}</summary><div className="form-grid">
       {['home', 'away'].map(team => <fieldset key={team}><legend>{team === 'home' ? t("Home team") : t("Away team")}</legend>
         <label>{t('Search clubs')}<input type="search" value={clubSearch[team]} onChange={event=>setClubSearch(previous=>({...previous,[team]:event.target.value}))} placeholder={t('City or club name')}/></label>
         <label>{t("Club (FFHG Nord-Est)")}<select value={draft[`${team}Club`]} onChange={event => setDraft(previous => selectClub(previous, team, event.target.value))}><option value="">{t("Custom team")}</option>{clubs.filter(club=>club.id===draft[`${team}Club`] || normalizeSearch(`${club.city} ${club.name}`).includes(normalizeSearch(clubSearch[team]))).map(club => <option key={club.id} value={club.id}>{club.city} — {club.name}</option>)}</select></label>
@@ -129,32 +132,30 @@ function Setup({
               [team]: event.target.value
             }))} /></label>
         <p className="field-help">{t('Choose the category playing this match. Edit the name for a second squad or club alliance; the club logo is kept.')}</p>
-        <ImageField label={t("Team logo")} value={clubLogo(draft, team)} onChange={value => setDraft(previous => ({
+        <details className="form-disclosure"><summary>{t('Team logo')}</summary><ImageField label={t("Image file")} value={clubLogo(draft, team)} onChange={value => setDraft(previous => ({
             ...previous,
             [`${team}Logo`]: value,
             [`${team}Club`]: ''
-          }))} />
+          }))} /></details>
       </fieldset>)}
-    </div>
+    </div></details>
     <fieldset><legend>{t("Game clock")}</legend><div className="form-grid">
       <label>{t("Period length (minutes)")}<input type="number" min="1" max="99" required value={draft.periodMinutes} onChange={event => change('periodMinutes', Number(event.target.value))} /></label>
       <label>{t("Number of periods")}<input type="number" min="1" max="9" required value={draft.periods} onChange={event => change('periods', Number(event.target.value))} /></label>
     </div><p className="field-help">{t("Period length applies to the next period or a new game. Use Edit clock to change the current clock.")}</p></fieldset>
-    <label className="check-label"><input type="checkbox" checked={draft.autoPauseOnGoalPenalty} onChange={event => change('autoPauseOnGoalPenalty', event.target.checked)} />{t('Auto pause on goal/penalty')}</label>
+    <details className="form-disclosure"><summary>{t('Game options')}</summary><label className="check-label"><input type="checkbox" checked={draft.autoPauseOnGoalPenalty} onChange={event => change('autoPauseOnGoalPenalty', event.target.checked)} />{t('Auto pause on goal/penalty')}</label>
     <label className="check-label"><input type="checkbox" checked={Boolean(draft.noAnimations)} onChange={event=>change('noAnimations',event.target.checked)}/>{t('No animations')}</label>
     <label className="check-label"><input type="checkbox" checked={Boolean(draft.resetScoresEachPeriod)} onChange={event=>change('resetScoresEachPeriod',event.target.checked)}/>{t('Reset the score at each period')}</label>
-    <p className="field-help">{t('For categories scored period by period. Goals stay on the match sheet, which keeps the running total.')}</p>
-    <fieldset><legend>{t("Horn & junior shifts")}</legend>
-      <label>{t("Horn sound")}<select value={draft.hornSound} onChange={event => change('hornSound', event.target.value)}>{hornOptions.map(option => <option key={option.id} value={option.id}>{t(option.label)}</option>)}</select></label>
-      <p className="field-help">{t(hornOptions.find(option => option.id === draft.hornSound)?.description || hornOptions[0].description)}</p>
+    <p className="field-help">{t('For categories scored period by period. Goals stay on the match sheet, which keeps the running total.')}</p></details>
+    <details className="form-disclosure"><summary>{t("Horn & junior shifts")}</summary>
       <label className="check-label"><input type="checkbox" checked={draft.endHorn} onChange={event => change('endHorn', event.target.checked)} />{t("Sound horn at the end of each period")}</label>
       <label className="check-label"><input type="checkbox" checked={draft.shiftEnabled} onChange={event => change('shiftEnabled', event.target.checked)} />{t("Automatic junior shift horn")}</label>
-      <div className="form-grid"><label>{t("Shift interval (seconds)")}<input type="number" min="5" max="600" required value={draft.shiftSeconds} onChange={event => change('shiftSeconds', Number(event.target.value))} /></label>
-      <label>{t("Horn volume ·")} {draft.volume}%<input type="range" min="0" max="100" value={draft.volume} onChange={event => change('volume', Number(event.target.value))} /></label></div>
+      <label>{t("Shift interval (seconds)")}<input type="number" min="5" max="600" required value={draft.shiftSeconds} onChange={event => change('shiftSeconds', Number(event.target.value))} /></label>
       <p className="field-help">{t("Shifts follow game time and pause at stoppages. Keep this page visible and the device awake for timely horns.")}</p>
-      <button type="button" className="secondary" onClick={() => testHorn(draft.volume, 'manual', draft.hornSound)}><Icon name="horn" />{t("Test horn")}</button>
-    </fieldset>
-    <fieldset><legend>{t("Scoreboard background")}</legend><label>{t("Theme")}<select value={draft.theme} onChange={event => change('theme', event.target.value)}><option value="volants">{t("Français Volants · blue & white")}</option><option value="neutral">{t("Neutral · dark")}</option></select></label><ImageField label={t("Background image")} value={draft.background} onChange={value => change('background', value)} /><p className="field-help">{t("Images stay in this browser. PNG, JPG, WebP or GIF, up to 1 MB each.")}</p></fieldset>
+      <button type="button" className="secondary" onClick={() => testHorn()}><Icon name="horn" />{t("Test horn")}</button>
+    </details>
+    <PresetPanel settings={draft} apply={settings => setDraft(previous => ({...previous, ...settings}))}/>
+    {device}
     {newMatchSetup&&<p className="field-help">{t("Starting a new game clears the score and match sheet. The new clock stays paused.")}</p>}
     <div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t("Cancel")}</button><button className="primary" type="submit">{newGame ? t("Start new game") : t("Save setup")}</button></div>
   </form></Modal>;
@@ -201,29 +202,55 @@ function PenaltyForm({
     <div className="modal-actions"><button className="secondary" type="button" onClick={close}>{t("Cancel")}</button><button className="primary" type="submit">{t("Add penalty")}</button></div>
   </form></Modal>;
 }
-function ClockForm({
-  game,
-  save,
-  close
-}) {
+function ClockForm({game, save, close}) {
   const t = useI18n();
-  const [value, setValue] = useState(formatTime(game.remainingMs));
+  const active=game.auxiliary;
+  const [value, setValue] = useState(formatTime(active?.remainingMs ?? game.remainingMs));
   const [period, setPeriod] = useState(game.period);
+  const [timeDirty,setTimeDirty] = useState(false);
+  const [periodDirty,setPeriodDirty] = useState(false);
   const [error, setError] = useState('');
-  return <Modal title={t("Edit game clock")} close={close}><form onSubmit={event => {
+  const currentTime=formatTime(active?.remainingMs ?? game.remainingMs);
+  const title=active?.kind==='break' ? t('Edit break clock') : active?.kind==='timeout' ? t('Edit timeout clock') : t('Edit game clock');
+  return <Modal title={title} close={close}><form onSubmit={event => {
       event.preventDefault();
-      const ms = parseTime(value);
-      if (ms === null) {
-        setError('Use MM:SS, for example 12:30.');
+      const ms = timeDirty ? parseTime(value) : undefined;
+      const maximum=active?.kind==='timeout'?30000:active?.kind==='break'?5940000:5999000;
+      if (timeDirty && (ms === null || ms > maximum)) {
+        setError(active?.kind==='timeout'?'Timeout cannot exceed 00:30.':active?.kind==='break'?'Break cannot exceed 99:00.':'Enter a time between 00:00 and 99:59.');
         return;
       }
-      save(ms, period);
+      save({...(timeDirty?{remainingMs:ms}:{}),...(!active&&periodDirty?{period}:{})});
     }}>
-    <p className="muted">{t("The game is paused. Penalty and shift time are kept as they are.")}</p>
-    <label>{t("Time remaining (MM:SS)")}<input autoFocus required value={value} onChange={event => setValue(event.target.value)} /></label>
-    <label>{t("Period")}<input type="number" required min="1" max="99" value={period} onChange={event => setPeriod(Number(event.target.value))} /></label>
+    <p className="muted">{t('Changes apply when saved. The clock keeps its current running or paused state.')}</p>
+    <p className="clock-edit-live" role="status">{t('Live now')} · <strong>{currentTime}</strong> · {t(isClockRunning(game)?'Running':'Clock paused')}</p>
+    <label>{t("Time remaining (MM:SS)")}<input autoFocus required value={value} onChange={event => {setTimeDirty(true);setValue(event.target.value);}} /></label>
+    {!active&&<label>{t("Period")}<input type="number" required min="1" max="99" value={period} onChange={event => {setPeriodDirty(true);setPeriod(Number(event.target.value));}} /></label>}
     {error && <p className="form-error" role="alert">{t(error)}</p>}
     <div className="modal-actions"><button className="secondary" type="button" onClick={close}>{t("Cancel")}</button><button className="primary" type="submit">{t("Save clock")}</button></div>
+  </form></Modal>;
+}
+function TeamEditor({game, team, save, close}) {
+  const t=useI18n();
+  const [draft,setDraft]=useState(()=>({
+    name:game.settings[team], club:game.settings[`${team}Club`], category:game.settings[`${team}Category`], logo:game.settings[`${team}Logo`]
+  }));
+  const [search,setSearch]=useState('');
+  const normalize=value=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const chooseClub=id=>{
+    const next=selectClub({...game.settings,[team]:draft.name,[`${team}Club`]:draft.club,[`${team}Category`]:draft.category,[`${team}Logo`]:draft.logo},team,id);
+    setDraft(old=>({...old,name:next[team],club:next[`${team}Club`],logo:next[`${team}Logo`]}));
+  };
+  const name=teamDisplayName(game.settings,team,t);
+  return <Modal title={t('Edit {team}',{team:name})} close={close}><form onSubmit={event=>{event.preventDefault();save({
+    [team]:draft.name.trim()||t(team==='home'?'HOME':'AWAY'), [`${team}Club`]:draft.club, [`${team}Category`]:draft.category, [`${team}Logo`]:draft.logo
+  });}}>
+    <label>{t('Team / alliance name')}<input autoFocus required maxLength="60" value={draft.name} onChange={event=>setDraft(old=>({...old,name:event.target.value}))}/></label>
+    <details className="form-disclosure"><summary>{t('Club & category')}</summary><label>{t('Search clubs')}<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder={t('City or club name')}/></label>
+    <label>{t('Club (FFHG Nord-Est)')}<select value={draft.club} onChange={event=>chooseClub(event.target.value)}><option value="">{t('Custom team')}</option>{clubs.filter(club=>club.id===draft.club||normalize(`${club.city} ${club.name}`).includes(normalize(search))).map(club=><option key={club.id} value={club.id}>{club.city} — {club.name}</option>)}</select></label>
+    <label>{t('Youth category')}<select value={draft.category} onChange={event=>setDraft(old=>({...old,category:event.target.value}))}><option value="">{t('No category / senior')}</option>{youthCategories.map(category=><option key={category} value={category}>{category}</option>)}</select></label></details>
+    <details className="form-disclosure"><summary>{t('Team logo')}</summary><ImageField label={t('Team logo')} value={clubLogo({...game.settings,[`${team}Club`]:draft.club,[`${team}Logo`]:draft.logo},team)} onChange={logo=>setDraft(old=>({...old,logo,club:''}))}/></details>
+    <div className="modal-actions"><button className="secondary" type="button" onClick={close}>{t('Cancel')}</button><button className="primary">{t('Save team')}</button></div>
   </form></Modal>;
 }
 function BreakForm({minutes, save, close}) {
@@ -276,6 +303,8 @@ export default function Scoreboard() {
   const capturedClock = useRef(null);
   const lastSaved = useRef(0);
   const display = useOperatorDisplay(current, sync);
+  const extendedScreen = useExtendedScreen();
+  const findArenaScreen = useArenaScreen(extendedScreen);
   const [undoTarget,setUndoTarget]=useState(null);
   const wakeStatus=useWakeLock(game.settings.keepAwake);
   const offlineStatus=useOffline();
@@ -285,7 +314,6 @@ export default function Scoreboard() {
   const [storageError, setStorageError] = useState(false);
   const [hornFlash, setHornFlash] = useState('');
   const flashTimeout = useRef(null);
-  const [fullscreen, setFullscreen] = useState(false);
   function persist(value) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
@@ -294,11 +322,11 @@ export default function Scoreboard() {
       setStorageError(true);
     }
   }
-  function horn(volume = current.current.settings.volume, type = 'manual', sound = current.current.settings.hornSound) {
+  function horn(type = 'manual') {
     setHornFlash(type === 'shift' ? 'CHANGE LINES' : type === 'end' ? (current.current.auxiliary ? 'Countdown complete' : current.current.period >= current.current.settings.periods ? 'FINAL BUZZER' : 'PERIOD OVER') : 'HORN');
     clearTimeout(flashTimeout.current);
     flashTimeout.current = setTimeout(() => setHornFlash(''), 1800);
-    playHorn(volume, type === 'shift' ? 0.9 : 3.2, sound).catch(() => setNotice('Sound is unavailable. Tap Test horn in Game setup to enable it.'));
+    playHorn(type === 'shift' ? 0.9 : 3.2).catch(() => setNotice('Sound is unavailable. Tap Test horn in Configuration to enable it.'));
   }
   function sync() {
     const now = performance.now();
@@ -306,7 +334,7 @@ export default function Scoreboard() {
     tickAt.current = now;
     result.game = recordMatchEvents(current.current,result.game,Date.now(),true);
     current.current = result.game;
-    if (result.horn) horn(result.game.settings.volume, result.horn);
+    if (result.horn) horn(result.horn);
     return result.game;
   }
   function update(action, undoable = true) {
@@ -330,8 +358,14 @@ export default function Scoreboard() {
     setActiveTab('board');setModal(null);setNotice('');
     clearTimeout(flashTimeout.current);setHornFlash('');
   }
+  // With a second screen the public window goes there fullscreen on its own.
+  async function openPublicScreen() {
+    const arena = await findArenaScreen();
+    if (display.open(arena)) setNotice(arena ? 'Public screen opened fullscreen on the arena display.' : 'Public window opened. Move it to your second screen and click Fullscreen.');
+    else setNotice('Allow pop-ups to open the public scoreboard.');
+  }
   function toggleClock() {
-    if (!isClockRunning(current.current)) unlockAudio(current.current.settings.hornSound).catch(() => setNotice('Tap Test horn in Game setup to check sound before the game.'));
+    if (!isClockRunning(current.current)) unlockAudio().catch(() => setNotice('Tap Test horn in Configuration to check sound before the game.'));
     update(toggleActiveClock);
   }
   useEffect(() => {
@@ -355,38 +389,21 @@ export default function Scoreboard() {
       persist(value);
     };
     const keydown = event => {
-      if (event.key === 'Escape') setFullscreen(false);
       if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable) return;
       event.preventDefault();
       toggleClock();
     };
-    const fullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement));
     window.addEventListener('pagehide', pageHide);
     window.addEventListener('keydown', keydown);
     document.addEventListener('visibilitychange', visibility);
-    document.addEventListener('fullscreenchange', fullscreenChange);
     return () => {
       clearInterval(interval);
       clearTimeout(flashTimeout.current);
       window.removeEventListener('pagehide', pageHide);
       window.removeEventListener('keydown', keydown);
       document.removeEventListener('visibilitychange', visibility);
-      document.removeEventListener('fullscreenchange', fullscreenChange);
     };
   }, []);
-  async function toggleFullscreen() {
-    if (fullscreen) {
-      setFullscreen(false);
-      if (document.fullscreenElement) await document.exitFullscreen();
-      return;
-    }
-    setFullscreen(true);
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();else setNotice('Fullscreen is unavailable in this browser. You can add this page to your home screen.');
-    } catch {
-      setNotice('Fullscreen could not be opened in this browser.');
-    }
-  }
   useEffect(() => {
     document.documentElement.lang = game.settings.language;
   }, [game.settings.language]);
@@ -395,10 +412,10 @@ export default function Scoreboard() {
   const toolbar = <>
     <div className="board-brand">ICE<span>TRACKER</span></div>
     <nav className="board-tabs" aria-label={t('Match views')}><button aria-pressed={activeTab==='board'} onClick={()=>setActiveTab('board')}><Icon name="monitor"/>{t('Board')}</button><button aria-pressed={activeTab==='sheet'} onClick={()=>setActiveTab('sheet')}><Icon name="sheet"/>{t('Match sheet')}</button></nav>
-    <div className="toolbar-actions"><button className="secondary" onClick={()=>setModal('new-game')}><Icon name="plus"/>{t('New game')}</button><button className="secondary" disabled={!undoTarget} title={t('Undo last action')} aria-label={t('Undo last action')} onClick={()=>setModal('undo')}><Icon name="reset"/>{t('Undo')}</button><button className="secondary" onClick={()=>setNotice(display.open()?'Public window opened. Move it to your second screen and click Fullscreen.':'Allow pop-ups to open the public scoreboard.')}><Icon name="monitor"/>{t('Public screen')}</button><button className="secondary" title={t('Tools')} aria-label={t('Tools')} onClick={()=>setModal('tools')}><Icon name="settings"/>{t('Tools')}</button><button className="secondary" title={t('Fullscreen')} aria-label={t(fullscreen?'Exit fullscreen':'Fullscreen')} onClick={toggleFullscreen}><Icon name="expand"/>{t(fullscreen?'Exit fullscreen':'Fullscreen')}</button></div>
+    <div className="toolbar-actions"><button className="language-toggle" title={t(game.settings.language==='fr'?'Switch language to English':'Passer en français')} aria-label={t(game.settings.language==='fr'?'Switch language to English':'Passer en français')} onClick={()=>update(value=>({...value,settings:{...value.settings,language:value.settings.language==='fr'?'en':'fr'}}),false)}><span aria-hidden="true">{game.settings.language==='fr'?'🇫🇷':'🇬🇧'}</span>{game.settings.language.toUpperCase()}</button><button className="secondary" onClick={()=>setModal('new-game')}><Icon name="plus"/>{t('New game')}</button><button className="secondary" disabled={!undoTarget} title={t('Undo last action')} aria-label={t('Undo last action')} onClick={()=>setModal('undo')}><Icon name="reset"/>{t('Undo')}</button><button className={`secondary ${extendedScreen?'screen-ready':''}`} title={t(extendedScreen?'Second screen detected · opens fullscreen there':'Public screen')} onClick={openPublicScreen}><Icon name="monitor"/>{t('Public screen')}</button><button className="secondary" title={t('Configuration')} onClick={()=>openModal('setup')}><Icon name="settings"/>{t('Configuration')}</button></div>
     {(notice||storageError)&&<div className="notice" role="alert">{t(notice||'Changes could not be saved on this device.')}<button className="icon-button" onClick={()=>setNotice('')} aria-label={t('Dismiss message')}>×</button></div>}
   </>;
-  return <I18nContext.Provider value={game.settings.language}><div className={`ice-app theme-${game.settings.theme} ${fullscreen ? 'display-mode' : ''} ${activeTab==='board'?'board-view':'sheet-view'}`}>
+  return <I18nContext.Provider value={game.settings.language}><div className={`ice-app theme-${game.settings.theme} ${activeTab==='board'?'board-view':'sheet-view'}`}>
     <main>{activeTab==='sheet'?<MatchSheet game={game} toolbar={toolbar} toggleClock={toggleClock} editEvent={event=>setModal({editEvent:event.id})} addNote={()=>openModal('note')} goBoard={()=>setActiveTab('board')} getSnapshot={()=>sync()} saveInfo={info=>{update(value=>({...value,matchInfo:info}));try{localStorage.setItem('icetracker-venue',JSON.stringify({venue:info.venue,competition:info.competition}));}catch{}}} restoreBackup={restored=>{restored={...restored,pauseStartedAt:Date.now(),displayRevision:crypto.randomUUID()};const before=sync();setUndoTarget(structuredClone(before));current.current=restored;tickAt.current=performance.now();setGame(restored);persist(restored);display.publish(restored);}}/>:<GameBoard game={game} hornFlash={hornFlash} toolbar={toolbar} actions={{
       score:(team,delta)=>openModal(delta>0?{goalTeam:team}:{removeGoalTeam:team}),
       addPenalty:team=>openModal(`penalty-${team}`),
@@ -407,24 +424,23 @@ export default function Scoreboard() {
       startPenalty:(team,row)=>update(value=>({...value,penalties:{...value.penalties,[team]:value.penalties[team].map(item=>item.id===row.id?{...item,deferred:false}:item)}})),
       timeout:team=>openModal({timeoutTeam:team}),
       editClock:()=>openModal('clock'),
+      editTeam:team=>openModal({editTeam:team}),
       restartShift:()=>update(value=>({...value,shiftRemainingMs:value.settings.shiftSeconds*1000})),
       toggle:toggleClock,horn:()=>horn(),break:()=>openModal('break'),nextPeriod:()=>openModal('next'),
       endAuxiliary:()=>openModal('end-auxiliary'),
     }}/>}</main>
     <footer className="ice-footer"><button className="credits-button" onClick={() => openModal('credits')}>{t('Source & credits')}</button><span>{t("ICE TIME. MADE SIMPLE.")}</span><a href="?mode=stats">{t("Open player statistics")} <Icon name="arrow" size={16} /></a></footer>
     {modal==='new-game'&&<NewMatchChooser Frame={Modal} game={game} close={()=>setModal(null)} start={startNewMatch} configure={()=>openModal('setup-new')}/>}
-    {modal==='tools'&&<Modal title={t('Tools')} close={()=>setModal(null)}><div className="tools-grid"><button className="secondary" onClick={()=>openModal('setup')}><Icon name="settings"/>{t('Game setup')}</button><button className="secondary" onClick={()=>setModal('presets')}><Icon name="sheet"/>{t('Match presets')}</button><button className="secondary" onClick={()=>{setActiveTab('sheet');setModal(null);}}><Icon name="sheet"/>{t('Match sheet')}</button><button className="secondary" onClick={()=>setModal('credits')}>{t('Source & credits')}</button></div><label>{t('Language')}<select value={game.settings.language} onChange={e=>update(value=>({...value,settings:{...value.settings,language:e.target.value}}),false)}><option value="fr">Français</option><option value="en">English</option></select></label><label className="check-label"><input type="checkbox" checked={game.settings.keepAwake} onChange={e=>update(value=>({...value,settings:{...value.settings,keepAwake:e.target.checked,keepAwakePreferenceSet:true}}),false)}/>{t('Keep screen awake')}</label><p className="device-status">{t(wakeStatus)}<br/>{t(offlineStatus)}</p></Modal>}
     {modal==='undo'&&undoTarget&&<Modal title={t('Undo last action')} close={()=>setModal(null)}><p>{t('Restore the state before the last action? The clock will return to the saved time and stay paused.')}</p><p><strong>{undoTarget.scores.home} – {undoTarget.scores.away} · {formatTime(undoTarget.remainingMs)}</strong></p><div className="modal-actions"><button className="secondary" onClick={()=>setModal(null)}>{t('Cancel')}</button><button className="primary" onClick={()=>{const restored=undoGame(undoTarget);current.current=restored;tickAt.current=performance.now();setGame(restored);persist(restored);display.publish(restored);setUndoTarget(null);setModal(null);}}>{t('Undo last action')}</button></div></Modal>}
     {modal?.editEvent&&game.events.find(e=>e.id===modal.editEvent)&&<EventEditor Frame={Modal} game={game} event={game.events.find(e=>e.id===modal.editEvent)} close={()=>setModal(null)} save={patch=>{update(value=>editMatchEvent(value,modal.editEvent,patch));setModal(null);}}/>}
-    {modal==='presets'&&<PresetManager Frame={Modal} settings={game.settings} close={()=>setModal(null)} apply={settings=>{const checked=restoreGame(JSON.stringify(createGame({...current.current.settings,...settings})));if(!checked){setNotice('Invalid preset.');return;}update(value=>({...value,settings:checked.settings,shiftRemainingMs:checked.settings.shiftSeconds*1000}));setModal(null);}}/>}
-    {modal === 'credits' && <Modal title={t('Source & credits')} close={() => setModal(null)}><p>{t('Clubs verified against the FFHG Nord-Est directory.')}</p><p><a href="https://nord-est.ffhg.org/annuaire-clubs/" target="_blank" rel="noreferrer">FFHG · Nord-Est</a></p><p>Français Volants · #000034 / #FFFFFF</p>{hornOptions.map(option => <p key={option.id}><a href={option.source} target="_blank" rel="noreferrer">{t(option.label)} · {option.credit}</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0 1.0</a></p>)}</Modal>}
-    {modal === 'break' && <BreakForm minutes={game.settings.breakMinutes} close={()=>setModal(null)} save={minutes=>{unlockAudio(current.current.settings.hornSound).catch(()=>{});update(value=>startBreak(value,minutes));setModal(null);}}/>}
-    {modal?.timeoutTeam && <Modal title={t('Timeout · {team}',{team:teamDisplayName(game.settings,modal.timeoutTeam,t)})} close={()=>setModal(null)}><p>{t('One 30-second timeout per team per game. Start only after the referee grants it.')}</p><div className="modal-actions"><button className="secondary" onClick={()=>setModal(null)}>{t('Cancel')}</button><button className="primary" onClick={()=>{unlockAudio(current.current.settings.hornSound).catch(()=>{});update(value=>startTimeout(value,modal.timeoutTeam));setModal(null);}}>{t('Use timeout')}</button></div></Modal>}
+    {modal === 'credits' && <Modal title={t('Source & credits')} close={() => setModal(null)}><p>{t('Clubs verified against the FFHG Nord-Est directory.')}</p><p><a href="https://nord-est.ffhg.org/annuaire-clubs/" target="_blank" rel="noreferrer">FFHG · Nord-Est</a></p><p>Français Volants · #000034 / #FFFFFF</p><p><a href={industrialHorn.source} target="_blank" rel="noreferrer">{t(industrialHorn.label)} · {industrialHorn.credit}</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0 1.0</a></p></Modal>}
+    {modal === 'break' && <BreakForm minutes={game.settings.breakMinutes} close={()=>setModal(null)} save={minutes=>{unlockAudio().catch(()=>{});update(value=>startBreak(value,minutes));setModal(null);}}/>}
+    {modal?.timeoutTeam && <Modal title={t('Timeout · {team}',{team:teamDisplayName(game.settings,modal.timeoutTeam,t)})} close={()=>setModal(null)}><p>{t('One 30-second timeout per team per game. Start only after the referee grants it.')}</p><div className="modal-actions"><button className="secondary" onClick={()=>setModal(null)}>{t('Cancel')}</button><button className="primary" onClick={()=>{unlockAudio().catch(()=>{});update(value=>startTimeout(value,modal.timeoutTeam));setModal(null);}}>{t('Use timeout')}</button></div></Modal>}
     {modal === 'end-auxiliary' && <Modal title={t('Back to game')} close={()=>setModal(null)}><p>{t('End this countdown and return to the paused match clock? A used timeout stays consumed.')}</p><div className="modal-actions"><button className="secondary" onClick={()=>setModal(null)}>{t('Cancel')}</button><button className="primary" onClick={()=>{update(leaveAuxiliary);setModal(null);}}>{t('Back to game')}</button></div></Modal>}
     {modal==='note'&&<NoteForm close={()=>setModal(null)} save={text=>{update(value=>addMatchNote(value,text,capturedClock.current));setModal(null);}}/>}
     {modal?.goalTeam && <GoalForm game={game} team={modal.goalTeam} close={()=>setModal(null)} save={details=>{update(value=>recordGoal(value,modal.goalTeam,{...details,clock:capturedClock.current}));setModal(null);}}/>}
     {modal?.removeGoalTeam && <Modal title={t('Remove a goal?')} close={()=>setModal(null)}><p>{t('The latest goal for this team and its assists will be removed. Check penalties manually if that goal ended one.')}</p><div className="modal-actions"><button className="secondary" onClick={()=>setModal(null)}>{t('Cancel')}</button><button className="primary" onClick={()=>{update(value=>removeGoal(value,modal.removeGoalTeam));setModal(null);}}>{t('Remove goal')}</button></div></Modal>}
-    {(modal === 'setup' || modal === 'setup-new') && <Setup key={modal} newMatchSetup={modal==='setup-new'} game={game} close={() => setModal(null)} testHorn={horn} save={(settings, reset) => {
+    {(modal === 'setup' || modal === 'setup-new') && <Setup key={modal} newMatchSetup={modal==='setup-new'} game={game} close={() => setModal(modal === 'setup-new' ? 'new-game' : null)} testHorn={horn} device={<details className="form-disclosure"><summary>{t('This device')}</summary><label className="check-label"><input type="checkbox" checked={game.settings.keepAwake} onChange={e=>update(value=>({...value,settings:{...value.settings,keepAwake:e.target.checked,keepAwakePreferenceSet:true}}),false)}/>{t('Keep screen awake')}</label><p className="device-status">{t(wakeStatus)}<br/>{t(offlineStatus)}</p><button type="button" className="secondary" onClick={()=>{setActiveTab('sheet');setModal(null);}}><Icon name="sheet"/>{t('Match sheet')}</button></details>} save={(settings, reset) => {
         if(reset){startNewMatch(settings);return;}
         update(value => ({
           ...value,
@@ -433,17 +449,11 @@ export default function Scoreboard() {
         }));
         setModal(null);
       }} />}
-    {modal === 'clock' && <ClockForm game={game} close={() => setModal(null)} save={(remainingMs, period) => {
-        update(value => ({
-          ...value,
-          remainingMs,
-          periodElapsedMs: Math.max(0,(periodLength(value,period)??value.settings.periodMinutes*60000)-remainingMs),
-          periodLengths:{...value.periodLengths,[period]:Math.max(remainingMs,periodLength(value,period)??value.settings.periodMinutes*60000)},
-          period,
-          running: false
-        }));
+    {modal === 'clock' && <ClockForm game={game} close={() => setModal(null)} save={patch => {
+        update(value => applyClockEdit(value, patch), false);
         setModal(null);
       }} />}
+    {modal?.editTeam && <TeamEditor game={game} team={modal.editTeam} close={()=>setModal(null)} save={patch=>{update(value=>({...value,settings:{...value.settings,...patch}}),false);setModal(null);}}/>}
     {typeof modal === 'string' && modal.startsWith('penalty-') && <PenaltyForm teamName={teamDisplayName(game.settings, modal.slice(8), t)} close={() => setModal(null)} add={row => {
         const team = modal.slice(8);
         update(value => ({

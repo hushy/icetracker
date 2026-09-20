@@ -30,6 +30,11 @@ export default function PublicDisplay({ id }) {
   },[celebration]);
   const t=translator(game?.settings.language||'en');
   useEffect(()=>{document.documentElement.lang=game?.settings.language||'en';},[game?.settings.language]);
+  // Placed on the arena screen by the operator: fill it without anyone clicking here.
+  useEffect(()=>{
+    if(new URLSearchParams(location.search).get('fullscreen')!=='1'||document.fullscreenElement)return;
+    document.documentElement.requestFullscreen?.().catch(()=>{/* the Fullscreen button stays available */});
+  },[]);
   useEffect(()=>{
     const change=()=>setFullscreen(Boolean(document.fullscreenElement));
     const key=event=>{if(event.key==='Escape')setFullscreen(false);};
