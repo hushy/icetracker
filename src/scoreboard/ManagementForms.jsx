@@ -36,10 +36,19 @@ export function EventEditor({event,game,save,close,Frame}){
  <p className="field-help">{t('Edits correct the match sheet and goal details. Live scores, clocks and penalties stay under operator control.')}</p>
  {error&&<p role="alert" className="form-error">{t(error)}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('Cancel')}</button><button className="primary">{t('Save event')}</button></div></form></Frame>;
 }
-export function PresetManager({settings,apply,close,Frame}){
- const t=useI18n();const [rows,setRows]=useState(()=>{try{const data=JSON.parse(localStorage.getItem(PRESETS_KEY)||'[]');return Array.isArray(data)?data.filter(r=>typeof r.name==='string'&&r.settings):[];}catch{return [];}});const [name,setName]=useState('');const [error,setError]=useState('');
+export function PresetPanel({settings,apply}){
+ const t=useI18n();
+ const [rows,setRows]=useState(readPresets),[choice,setChoice]=useState(''),[name,setName]=useState(''),[error,setError]=useState('');
+ const selected=rows.find(row=>row.id===choice);
  const store=next=>{try{localStorage.setItem(PRESETS_KEY,JSON.stringify(next));setRows(next);setError('');return true;}catch{setError('Changes could not be saved on this device.');return false;}};
- return <Frame title={t('Match presets')} close={close}><p>{t('Save current period, break and horn settings. Applying a preset keeps the current score and clock; period length applies to the next period or a new game.')}</p><form onSubmit={e=>{e.preventDefault();if(!name.trim())return;if(store([...rows,{id:crypto.randomUUID(),name:name.trim(),settings:presetSettings(settings)}]))setName('');}}><label>{t('Preset name')}<input required maxLength="60" value={name} onChange={e=>setName(e.target.value)}/></label><button className="primary">{t('Save current settings')}</button></form><div className="preset-list">{rows.map(row=><div key={row.id}><strong>{row.name}</strong><button className="secondary" onClick={()=>apply(row.settings)}>{t('Apply')}</button><button className="secondary" onClick={()=>store(rows.filter(r=>r.id!==row.id))}>{t('Delete')}</button></div>)}</div>{error&&<p className="form-error">{t(error)}</p>}</Frame>;
+ return <details className="form-disclosure"><summary>{t('Saved configuration')}</summary>
+  <p className="field-help">{t('Applying a configuration fills this form. Nothing changes in the match until you save.')}</p>
+  <label>{t('Configuration')}<select aria-label={t('Configuration')} value={choice} onChange={e=>setChoice(e.target.value)}><option value="">{t('Choose a configuration')}</option>{rows.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+  {selected&&<p className="field-help">{selected.settings.periods} × {selected.settings.periodMinutes} min</p>}
+  <div className="sheet-actions"><button type="button" className="secondary" disabled={!selected} onClick={()=>apply(selected.settings)}>{t('Apply')}</button><button type="button" className="secondary" disabled={!selected} onClick={()=>{store(rows.filter(row=>row.id!==choice));setChoice('');}}>{t('Delete')}</button></div>
+  <label>{t('Preset name')}<input maxLength="60" value={name} onChange={e=>setName(e.target.value)} placeholder={t('Save current settings')}/></label>
+  <button type="button" className="secondary" disabled={!name.trim()} onClick={()=>{if(store([...rows,{id:crypto.randomUUID(),name:name.trim(),settings:presetSettings(settings)}]))setName('');}}>{t('Save current settings')}</button>
+  {error&&<p className="form-error">{t(error)}</p>}</details>;
 }
 
 export function NewMatchChooser({game,start,configure,close,Frame}) {

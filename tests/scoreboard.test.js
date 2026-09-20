@@ -112,7 +112,7 @@ test('French translation covers dynamic match messages and preserves parameters'
 test('existing saves gain default FV theme, English option and new horn', () => {
   const game = createGame(); delete game.settings.theme; delete game.settings.language; delete game.settings.hornSound;
   const result = restoreGame(JSON.stringify(game)); assert.equal(result.settings.theme, 'volants');
-  assert.equal(result.settings.language, 'en'); assert.equal(result.settings.hornSound, 'icebreaker');
+  assert.equal(result.settings.language, 'en'); assert.equal(result.settings.hornSound, 'industrial');
 });
 import { youthCategories, normalizeCategory, teamDisplayName } from '../src/scoreboard/youth.js';
 test('youth category labels follow each side without changing its name or logo', () => {
@@ -139,13 +139,23 @@ test('legacy saves and invalid category values display without a suffix', () => 
   assert.equal(normalizeCategory('U99'), '');
 });
 
-import { normalizeHorn, hornOptions } from '../src/scoreboard/horn-options.js';
-test('old crowd recording and synthesized horn migrate to the new deep horn', () => {
-  for (const old of ['arena', 'synth', undefined, 'invalid']) {
+import { normalizeHorn, DEFAULT_HORN } from '../src/scoreboard/horn-options.js';
+test('every saved horn choice migrates to the single industrial horn', () => {
+  for (const old of ['arena', 'synth', 'icebreaker', 'echo', undefined, 'invalid']) {
     const game = createGame(); game.settings.hornSound = old;
-    assert.equal(restoreGame(JSON.stringify(game)).settings.hornSound, 'icebreaker');
+    assert.equal(restoreGame(JSON.stringify(game)).settings.hornSound, 'industrial');
+    assert.equal(normalizeHorn(old), DEFAULT_HORN);
   }
-  for (const {id} of hornOptions) assert.equal(normalizeHorn(id), id);
+});
+test('industrial horn and fixed volume survive defaults, game creation and restored saves', () => {
+  assert.equal(defaultSettings.hornSound, 'industrial');
+  assert.equal(defaultSettings.volume, 70);
+  const created = createGame({...defaultSettings, hornSound:'icebreaker', volume:12});
+  assert.equal(created.settings.hornSound, 'industrial');
+  assert.equal(created.settings.volume, 70);
+  const restored = restoreGame(JSON.stringify({...created, settings:{...created.settings, hornSound:'echo', volume:4}}));
+  assert.equal(restored.settings.hornSound, 'industrial');
+  assert.equal(restored.settings.volume, 70);
 });
 
 import { startWarmup, startTimeout, leaveAuxiliary, toggleActiveClock, pauseClocks } from '../src/scoreboard/phases.js';
@@ -229,7 +239,14 @@ test('goal and penalty dialogs preserve manual clock control by default, includi
  const scored=recordGoal(game,'home',{id:'manual'});
  assert.equal(scored.running,true);assert.equal(advanceGame(scored,5000).game.remainingMs,game.remainingMs-5000);
  assert.equal(recordGoal({...game,running:false},'home',{id:'paused'}).running,false);
- assert.equal(prepareDialog(game,'setup').running,false);
+ assert.equal(prepareDialog(game,'setup'),game);
+});
+test('clock and team quick-edit dialogs never pause a live game, including auto-pause mode',()=>{
+ const game=running({autoPauseOnGoalPenalty:true});
+ assert.equal(prepareDialog(game,'clock'),game);
+ assert.equal(prepareDialog(game,{editTeam:'home'}),game);
+ assert.equal(prepareDialog(game,'clock').running,true);
+ assert.equal(prepareDialog({...game,running:false},'clock').running,false);
 });
 test('auto pause is opt-in, applies to goal and penalty dialogs and persists',()=>{
  const game=running({autoPauseOnGoalPenalty:true});
@@ -290,6 +307,11 @@ test('break replaces legacy warm-up and freezes match clocks',()=>{
 });
 test('presets contain match format settings without teams, live state or artwork',()=>{
  const settings={...defaultSettings,breakMinutes:8,periodMinutes:15,home:'Example',homeLogo:'data:image/png;base64,AAAA'};const preset=presetSettings(settings);assert.equal(preset.periodMinutes,15);assert.equal(preset.breakMinutes,8);assert.equal(preset.home,undefined);assert.equal(preset.homeLogo,undefined);assert.equal(preset.scores,undefined);
+});
+test('presets omit fixed horn sound and volume while retaining junior shift settings',()=>{
+ const preset=presetSettings({...defaultSettings,shiftEnabled:true,shiftSeconds:45,hornSound:'icebreaker',volume:12});
+ assert.equal(preset.shiftEnabled,true);assert.equal(preset.shiftSeconds,45);
+ assert.equal('hornSound' in preset,false);assert.equal('volume' in preset,false);
 });
 test('CSV exports French event times and escapes quotes, delimiters and spreadsheet formulas',()=>{
  const game=createGame({...defaultSettings,language:'fr',home:'=BAD;"name"'});game.events=[{id:'csv',type:'Goal',team:'home',scorer:'12',assists:['8','9'],period:1,elapsedMs:90000,remainingMs:1110000,occurredAt:1700000000000}];const csv=matchCsv(game);assert.ok(csv.startsWith('\uFEFF'));assert.match(csv,/Chrono montant/);assert.match(csv,/01:30/);assert.match(csv,/18:30/);assert.match(csv,/"'=BAD;""name"""/);assert.match(csv,/8 \/ 9/);
@@ -509,6 +531,101 @@ test('discarding an unknown penalty changes nothing and the clock never pauses f
   const live = {...running(), penalties:{home:[penalty(120000)],away:[]}};
   assert.equal(prepareDialog(live, {discard:penalty(120000), team:'home'}), live);
   assert.equal(prepareDialog({...live, settings:{...live.settings, autoPauseOnGoalPenalty:true}}, {discard:penalty(120000), team:'home'}).running, true);
+});
+
+import { applyClockEdit } from '../src/scoreboard/quick-edit.js';
+test('empty clock edits return the same game without rewinding live state',()=>{
+ const game=advanceGame(running(),12000).game;
+ assert.strictEqual(applyClockEdit(game,{}),game);
+ assert.equal(applyClockEdit(game,{}).remainingMs,game.remainingMs);
+ assert.equal(applyClockEdit(game,{}).periodElapsedMs,12000);
+});
+test('game clock edits preserve live or paused state and advance from the new time',()=>{
+ const live=advanceGame(running(),30000).game;
+ const edited=applyClockEdit(live,{remainingMs:900000});
+ assert.equal(edited.running,true);
+ assert.equal(edited.remainingMs,900000);
+ // The old ClockForm derived elapsed time from the established period length.
+ assert.equal(edited.periodElapsedMs,300000);
+ assert.equal(edited.periodLengths[1],1200000);
+ assert.equal(advanceGame(edited,5000).game.remainingMs,895000);
+
+ const paused={...live,running:false};
+ const pausedEdit=applyClockEdit(paused,{remainingMs:60000});
+ assert.equal(pausedEdit.running,false);
+ assert.equal(advanceGame(pausedEdit,5000).game.remainingMs,60000);
+
+ const expired=applyClockEdit(live,{remainingMs:0});
+ assert.equal(expired.running,false);
+ assert.equal(advanceGame(expired,5000).game.remainingMs,0);
+});
+test('period-only edits preserve the live remaining clock and established timing',()=>{
+ const game=advanceGame(running(),17000).game;
+ const edited=applyClockEdit(game,{period:2});
+ assert.equal(edited.period,2);
+ assert.equal(edited.remainingMs,game.remainingMs);
+ assert.equal(edited.running,true);
+ assert.equal(edited.periodElapsedMs,game.periodElapsedMs);
+ assert.deepEqual(edited.penalties,game.penalties);
+});
+test('clock edits use a historical event length when the period length map is incomplete',()=>{
+ const game=running({periodMinutes:15});
+ game.period=2; game.remainingMs=900000; game.periodElapsedMs=300000;
+ game.periodLengths={1:1200000};
+ game.events=[{id:'period-2-clock',type:'Clock corrected',period:2,elapsedMs:300000,remainingMs:900000}];
+ const edited=applyClockEdit(game,{remainingMs:600000});
+ assert.equal(edited.remainingMs,600000);
+ assert.equal(edited.periodElapsedMs,600000);
+ assert.equal(edited.periodLengths[2],1200000);
+});
+test('clock edits reject malformed values without changing the original object',()=>{
+ const game=running();
+ for(const remainingMs of [-1,1.5,Number.NaN,Number.POSITIVE_INFINITY,5999001]) {
+   assert.strictEqual(applyClockEdit(game,{remainingMs}),game,`remainingMs=${remainingMs}`);
+ }
+ for(const period of [0,1.5,100,Number.NaN,Number.POSITIVE_INFINITY]) {
+   assert.strictEqual(applyClockEdit(game,{period}),game,`period=${period}`);
+ }
+ assert.equal(applyClockEdit(game,{remainingMs:5999000}).remainingMs,5999000);
+ assert.equal(applyClockEdit(game,{period:99}).period,99);
+});
+test('auxiliary edits affect only the active countdown and keep its running state',()=>{
+ const breakGame=startBreak(running(),99);
+ assert.strictEqual(applyClockEdit(breakGame,{period:8}),breakGame);
+ const editedBreak=applyClockEdit(breakGame,{remainingMs:300000,period:8});
+ assert.equal(editedBreak.auxiliary.remainingMs,300000);
+ assert.equal(editedBreak.auxiliary.running,true);
+ assert.equal(editedBreak.period,breakGame.period);
+ assert.equal(editedBreak.remainingMs,breakGame.remainingMs);
+ assert.equal(advanceGame(editedBreak,10000).game.auxiliary.remainingMs,290000);
+ assert.equal(applyClockEdit(breakGame,{remainingMs:0}).auxiliary.running,false);
+ assert.equal(applyClockEdit(breakGame,{remainingMs:5940000}).auxiliary.remainingMs,5940000);
+ assert.strictEqual(applyClockEdit(breakGame,{remainingMs:5940001}),breakGame);
+
+ const timeout=startTimeout(running(),'home');
+ assert.strictEqual(applyClockEdit(timeout,{period:8}),timeout);
+ const editedTimeout=applyClockEdit(timeout,{remainingMs:10000,period:8});
+ assert.equal(editedTimeout.auxiliary.remainingMs,10000);
+ assert.equal(editedTimeout.auxiliary.running,true);
+ assert.equal(editedTimeout.auxiliary.team,'home');
+ assert.equal(editedTimeout.period,timeout.period);
+ assert.equal(editedTimeout.remainingMs,timeout.remainingMs);
+ assert.equal(applyClockEdit(timeout,{remainingMs:0}).auxiliary.running,false);
+ assert.equal(applyClockEdit(timeout,{remainingMs:30000}).auxiliary.remainingMs,30000);
+ assert.strictEqual(applyClockEdit(timeout,{remainingMs:30001}),timeout);
+});
+test('quick edits record a correction without inventing a pause or resume event',()=>{
+ const before=running();
+ const edited=applyClockEdit(before,{remainingMs:1100000});
+ const recorded=recordMatchEvents(before,edited,1700000000000);
+ assert.equal(recorded.running,true);
+ assert.deepEqual(recorded.events.map(event=>event.type),['Clock corrected']);
+
+ const paused={...before,running:false};
+ const pausedEdit=applyClockEdit(paused,{remainingMs:1100000});
+ const pausedRecorded=recordMatchEvents(paused,pausedEdit,1700000000000);
+ assert.equal(pausedRecorded.running,false);
+ assert.deepEqual(pausedRecorded.events.map(event=>event.type),['Clock corrected']);
 });
 test('per-period scoring clears the score at the period change and keeps the goals recorded', () => {
   let game = createGame({...defaultSettings, resetScoresEachPeriod:true});

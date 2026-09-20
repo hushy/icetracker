@@ -12,6 +12,7 @@ export default function Icon({
     play: <path d="m8 5 11 7-11 7Z" />,
     pause: <><path d="M8 5v14M16 5v14" /></>,
     settings: <><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></>,
+    edit: <><path d="m4 20 4.3-1 10.3-10.3a2.1 2.1 0 0 0-3-3L5.3 15.9 4 20Z"/><path d="m13.8 7.5 2.8 2.8"/></>,
     expand: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />,
     horn: <><path d="m4 9 10-5v16L4 15ZM4 9H2v6h2m13-7q5 4 0 8m1-11q8 7 0 14" /></>,
     arrow: <path d="M4 12h15m-6-6 6 6-6 6" />,

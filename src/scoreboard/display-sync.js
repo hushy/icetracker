@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { readDisplaySnapshot, projectDisplay } from './display-model.js';
+import { popupFeatures } from './screens.js';
 const channelName = id => `icetracker-public-${id}`;
 const targetOrigin = () => location.protocol === 'file:' ? '*' : location.origin;
 export function publicWindowId() {
@@ -20,9 +21,10 @@ export function useOperatorDisplay(current, sync) {
     channel.current?.postMessage(packet);
     if (child.current && !child.current.closed) child.current.postMessage(packet, targetOrigin());
   }
-  function open() {
+  function open(arena = null) {
     const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('display', id.current);
-    child.current = window.open(url.href, `icetracker-display-${id.current}`, 'popup,width=1280,height=800');
+    if (arena) url.searchParams.set('fullscreen', '1');
+    child.current = window.open(url.href, `icetracker-display-${id.current}`, popupFeatures(arena));
     if (child.current) publish();
     return Boolean(child.current);
   }

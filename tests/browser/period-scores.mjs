@@ -9,8 +9,8 @@ export default async function run(browser, url) {
   const display = await openPublicScreen(page, 'Écran public');
   display.on('pageerror', error => errors.push(error.message));
 
-  await page.getByRole('button', {name: 'Outils', exact: true}).click();
-  await page.getByRole('button', {name: 'Configuration du match', exact: true}).click();
+  await page.getByRole('button', {name: 'Configuration', exact: true}).click();
+  await page.getByText('Options du match', {exact: true}).click();
   await page.getByRole('checkbox', {name: 'RAZ du score à chaque période'}).check();
   await page.getByRole('button', {name: 'Enregistrer', exact: true}).click();
 
